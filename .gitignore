@@ -1,7 +1,29 @@
+# Build artifacts
 /target
+**/target
 **/*.rs.bk
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Raw data and audio recordings (Phase 0 rule: Never commit raw audio)
+data/
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# Environment variables and secrets (Never commit secrets)
 .env
+*.env
+.env.*
+!.env.example
+
+# IDE & Editor files
 *.swp
 *~
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/

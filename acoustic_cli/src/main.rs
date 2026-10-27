@@ -35,8 +35,8 @@ use std::time::Duration;
 /// EchoGrid Acoustic CLI — simulates the smartphone Edge AI pipeline.
 #[derive(Parser, Debug)]
 #[command(
-    name        = "acoustic_cli",
-    about       = "EchoGrid Edge AI mock — generates Proof-of-Power-Down and claims NegaWatt bounty",
+    name = "acoustic_cli",
+    about = "EchoGrid Edge AI mock — generates Proof-of-Power-Down and claims NegaWatt bounty",
     version,
     author
 )]
@@ -65,10 +65,10 @@ struct Args {
 #[derive(Serialize, Deserialize, Debug)]
 struct ProofPayload {
     wallet_address: String,
-    challenge_id:   String,
-    timestamp:      String,
-    proof_hash:     String,
-    nonce:          String,
+    challenge_id: String,
+    timestamp: String,
+    proof_hash: String,
+    nonce: String,
 }
 
 /// Oracle's response envelope.
@@ -119,11 +119,7 @@ fn main() {
     // Simulate background frequency readings.
     let freqs = [68.1, 70.3, 71.9, 72.4, 72.1];
     for f in &freqs {
-        println!(
-            "    {}  Frequency sample: {:.1} Hz",
-            "│".dimmed(),
-            f
-        );
+        println!("    {}  Frequency sample: {:.1} Hz", "│".dimmed(), f);
         pause(300);
     }
 
@@ -160,7 +156,11 @@ fn main() {
             "    {}  Frequency: {:.1} Hz  {}",
             "│".dimmed(),
             f,
-            if *f < 10.0 { "↓↓↓".red().to_string() } else { "↓".yellow().to_string() }
+            if *f < 10.0 {
+                "↓↓↓".red().to_string()
+            } else {
+                "↓".yellow().to_string()
+            }
         );
     }
 
@@ -215,7 +215,7 @@ fn main() {
 
     let payload = ProofPayload {
         wallet_address: args.wallet.clone(),
-        challenge_id:   args.challenge_id.clone(),
+        challenge_id: args.challenge_id.clone(),
         timestamp,
         proof_hash,
         nonce,
@@ -239,11 +239,7 @@ fn main() {
                         "green",
                     );
                     if let Some(tx) = oracle_resp.tx_hash {
-                        println!(
-                            "    {}  Stellar TX:  {}",
-                            "│".dimmed(),
-                            tx.bright_cyan()
-                        );
+                        println!("    {}  Stellar TX:  {}", "│".dimmed(), tx.bright_cyan());
                     }
                     println!(
                         "\n    {} You just helped balance Ghana's power grid! 🌍\n",
@@ -298,12 +294,12 @@ fn main() {
 fn log_step(icon: &str, msg: &str, color: &str) {
     let prefix = format!("[EchoGrid] {icon}").bold();
     let line = match color {
-        "cyan"    => format!("{prefix} {}", msg.cyan()),
-        "yellow"  => format!("{prefix} {}", msg.yellow()),
-        "green"   => format!("{prefix} {}", msg.green()),
-        "red"     => format!("{prefix} {}", msg.red()),
+        "cyan" => format!("{prefix} {}", msg.cyan()),
+        "yellow" => format!("{prefix} {}", msg.yellow()),
+        "green" => format!("{prefix} {}", msg.green()),
+        "red" => format!("{prefix} {}", msg.red()),
         "magenta" => format!("{prefix} {}", msg.magenta()),
-        _         => format!("{prefix} {msg}"),
+        _ => format!("{prefix} {msg}"),
     };
     println!("{line}");
 }
@@ -317,7 +313,8 @@ fn chrono_now_mock() -> String {
         .unwrap_or_default()
         .as_secs();
     // Format as a basic ISO string — not RFC 3339 but readable and unique.
-    format!("2026-10-27T{:02}:{:02}:{:02}Z",
+    format!(
+        "2026-10-27T{:02}:{:02}:{:02}Z",
         (secs / 3600) % 24,
         (secs / 60) % 60,
         secs % 60,
@@ -326,12 +323,17 @@ fn chrono_now_mock() -> String {
 
 /// Print an ASCII art banner for the demo presentation.
 fn print_banner() {
-    println!("{}", r#"
+    println!(
+        "{}",
+        r#"
   _____ _     _       ____      _     _ 
  | ____| |__ | | ___ / ___|_ __(_) __| |
  |  _| | '_ \| |/ _ \ |  _| '__| |/ _` |
  | |___| | | | |  __/ |_| | |  | | (_| |
  |_____|_| |_|_|\___|\____|_|  |_|\__,_|
     NegaWatt Marketplace — Acoustic Proof-of-Power
-"#.bright_cyan().bold());
+"#
+        .bright_cyan()
+        .bold()
+    );
 }

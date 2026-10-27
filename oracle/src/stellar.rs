@@ -10,15 +10,19 @@
 //! transaction hash so judges can see the full flow without a Testnet key.
 
 use anyhow::Result;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::types::ProofPayload;
 
 /// Environment variables expected when `live-network` is active.
-pub const ENV_ORACLE_SECRET: &str = "ORACLE_SECRET_KEY";    // S...
-pub const ENV_CONTRACT_ID:   &str = "CONTRACT_ID";           // C...
-pub const ENV_HORIZON_URL:   &str = "HORIZON_URL";           // https://horizon-testnet.stellar.org
-pub const ENV_TOKEN_ID:      &str = "TOKEN_CONTRACT_ID";     // C... (USDC-T contract)
+#[allow(dead_code)]
+pub const ENV_ORACLE_SECRET: &str = "ORACLE_SECRET_KEY"; // S...
+#[allow(dead_code)]
+pub const ENV_CONTRACT_ID: &str = "CONTRACT_ID"; // C...
+#[allow(dead_code)]
+pub const ENV_HORIZON_URL: &str = "HORIZON_URL"; // https://horizon-testnet.stellar.org
+#[allow(dead_code)]
+pub const ENV_TOKEN_ID: &str = "TOKEN_CONTRACT_ID"; // C... (USDC-T contract)
 
 // ---------------------------------------------------------------------------
 // ── Public entry point ───────────────────────────────────────────────────────

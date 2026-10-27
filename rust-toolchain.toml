@@ -7,7 +7,7 @@
 # (OS error 1455). Fix: increase the Windows paging file to ≥8 GB (see README).
 # Alternatively, install VS Build Tools and switch to stable-x86_64-pc-windows-msvc.
 [toolchain]
-channel = "stable-x86_64-pc-windows-gnu"
+channel = "stable"
 targets = [
     "wasm32-unknown-unknown",  # Required for Soroban contract compilation
 ]
