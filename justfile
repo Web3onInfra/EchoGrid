@@ -14,3 +14,7 @@ lint:
 # Run spectral report generation
 report:
     cd research/hum_detection; uv run python -m echogrid_hum.report
+
+# Run ON/OFF band SNR analysis
+band-snr:
+    cd research/hum_detection; uv run python -m echogrid_hum.band_snr
