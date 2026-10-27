@@ -1,0 +1,1243 @@
+{
+  "params": {
+    "sample_rate": 16000,
+    "frame_size": 1024,
+    "hop_size": 512,
+    "bands": [
+      [
+        45.0,
+        55.0
+      ],
+      [
+        55.0,
+        65.0
+      ],
+      [
+        115.0,
+        125.0
+      ]
+    ],
+    "drop_threshold_db": 6.0,
+    "hysteresis_db": 2.0,
+    "min_sustained_drop_s": 3.0,
+    "alpha_noise": 0.05,
+    "alpha_signal": 0.25
+  },
+  "scenarios": [
+    {
+      "scenario_name": "clean_power_down",
+      "frames": [
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": true
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 30.0,
+          "expected_state": "OFF_DETECTED",
+          "expected_triggered": false
+        }
+      ]
+    },
+    {
+      "scenario_name": "jitter_rejection",
+      "frames": [
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 51.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 48.5,
+          "expected_state": "ON",
+          "expected_triggered": false
+        }
+      ]
+    },
+    {
+      "scenario_name": "transient_dip_rejection",
+      "frames": [
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 35.0,
+          "expected_state": "PENDING_DROP",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        },
+        {
+          "energy_db": 50.0,
+          "expected_state": "ON",
+          "expected_triggered": false
+        }
+      ]
+    }
+  ]
+}
