@@ -103,15 +103,15 @@ class StreamingPowerDownDetector:
 
         return float(10.0 * np.log10(max(total_power, 1e-12)))
 
-    def process_frame(self, frame: np.ndarray) -> FrameResult:
-        """Process one audio frame. Strictly causal; no lookahead."""
+    def process_energy_frame(self, energy_db: float) -> FrameResult:
+        """Process one frame given its precomputed band energy in dB.
+
+        Enables direct vector replay without FFT recomputation (contract for JS/Rust ports).
+        """
         frame_time_s = self.frames_processed * (self.params.hop_size / self.params.sample_rate)
         frame_duration_s = self.params.hop_size / self.params.sample_rate
         self.frames_processed += 1
 
-        energy_db = self._compute_frame_band_energy_db(frame)
-
-        # Initialize or adapt running baseline (ON state power)
         if self.running_baseline_db is None:
             self.running_baseline_db = energy_db
 
@@ -120,7 +120,6 @@ class StreamingPowerDownDetector:
         recovery_threshold = drop_threshold + self.params.hysteresis_db
 
         if energy_db < drop_threshold:
-            # Power has dropped below threshold
             self.sustained_drop_s += frame_duration_s
             if self.sustained_drop_s >= self.params.min_sustained_drop_s:
                 if self.state != DetectorState.OFF_DETECTED:
@@ -132,10 +131,8 @@ class StreamingPowerDownDetector:
                 if self.state == DetectorState.ON:
                     self.state = DetectorState.PENDING_DROP
         elif energy_db >= recovery_threshold:
-            # Signal remains or has recovered back into ON operating range
             self.sustained_drop_s = 0.0
             self.state = DetectorState.ON
-            # Adaptively update running baseline when appliance is active
             self.running_baseline_db = (
                 1.0 - self.params.alpha_signal
             ) * self.running_baseline_db + self.params.alpha_signal * energy_db
@@ -148,6 +145,11 @@ class StreamingPowerDownDetector:
             running_baseline_db=round(self.running_baseline_db, 2),
             drop_duration_s=round(self.sustained_drop_s, 3),
         )
+
+    def process_frame(self, frame: np.ndarray) -> FrameResult:
+        """Process one audio frame. Strictly causal; no lookahead."""
+        energy_db = self._compute_frame_band_energy_db(frame)
+        return self.process_energy_frame(energy_db)
 
     def process_audio(self, audio: np.ndarray) -> list[FrameResult]:
         """Stream through an entire audio array frame-by-frame."""
