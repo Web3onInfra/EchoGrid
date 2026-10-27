@@ -1,0 +1,16 @@
+# Research package task runner
+set shell := ["powershell", "-c"]
+
+default: test
+
+# Run pytest test suite
+test:
+    uv run pytest
+
+# Run ruff check and formatting
+lint:
+    uv run ruff check .; uv run ruff format --check .
+
+# Run spectral report generation
+report:
+    uv run python -m echogrid_hum.report
