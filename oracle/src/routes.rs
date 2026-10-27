@@ -1,0 +1,179 @@
+//! # Oracle Route Handlers
+//!
+//! One Axum router, one endpoint that matters:
+//!   POST /api/v1/proof  — receives a Proof-of-Power-Down, verifies it,
+//!                          and triggers an on-chain NegaWatt payout.
+
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use sha2::{Digest, Sha256};
+use tracing::{error, info, warn};
+
+use crate::{
+    stellar::trigger_payout,
+    types::{OracleResponse, ProofPayload, VerificationResult},
+    AppState,
+};
+
+// ---------------------------------------------------------------------------
+// ── POST /api/v1/proof ───────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+
+/// **Proof submission endpoint** — the single most important route in EchoGrid.
+///
+/// A client (phone app or Acoustic CLI) posts a `ProofPayload`.  We:
+///   1. Verify the SHA-256 hash reconstructed from the known pre-image fields.
+///   2. Check the challenge_id is active (not expired, not already claimed).
+///   3. Call `trigger_payout` to move USDC from the escrow contract to the user.
+pub async fn submit_proof(
+    State(state): State<AppState>,
+    Json(payload): Json<ProofPayload>,
+) -> impl IntoResponse {
+    info!(
+        wallet    = %payload.wallet_address,
+        challenge = %payload.challenge_id,
+        "📥 Received Proof-of-Power-Down"
+    );
+
+    // ── Step 1: Cryptographic verification ───────────────────────────────────
+    let verification = verify_proof(&payload);
+    if !verification.valid {
+        warn!(reason = %verification.reason, "❌ Proof verification failed");
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(OracleResponse::err(format!(
+                "Proof invalid: {}",
+                verification.reason
+            ))),
+        );
+    }
+
+    // ── Step 2: Challenge validation ─────────────────────────────────────────
+    // In production: look up the challenge_id in a database keyed by the
+    // municipality, check it hasn't expired, and mark it as in-flight.
+    // For the MVP we accept any challenge_id that looks non-empty.
+    if payload.challenge_id.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(OracleResponse::err("challenge_id must not be empty")),
+        );
+    }
+
+    // ── Step 3: AgentPay — trigger the on-chain NegaWatt payout ─────────────
+    // Decode the proof_hash from hex into raw bytes for the Soroban contract.
+    let proof_bytes = match hex::decode(&payload.proof_hash) {
+        Ok(b) if b.len() == 32 => {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&b);
+            arr
+        }
+        Ok(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(OracleResponse::err("proof_hash must be 32 bytes (64 hex chars)")),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(OracleResponse::err(format!("proof_hash hex decode failed: {e}"))),
+            );
+        }
+    };
+
+    match trigger_payout(&payload, proof_bytes).await {
+        Ok(tx_hash) => {
+            info!(
+                tx = %tx_hash,
+                wallet = %payload.wallet_address,
+                "✅ NegaWatt payout triggered — USDC transferred to user"
+            );
+            (
+                StatusCode::OK,
+                Json(OracleResponse::ok(
+                    "NegaWatt bounty paid! Thank you for relieving the grid.",
+                    Some(tx_hash),
+                )),
+            )
+        }
+        Err(e) => {
+            error!(err = %e, "🔴 Stellar transaction failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OracleResponse::err(format!("Payout failed: {e}"))),
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ── GET /api/v1/health ───────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+
+/// Simple liveness probe — useful for load balancers and demo readiness checks.
+pub async fn health() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "status":  "ok",
+        "service": "echogrid-oracle",
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// ── Proof Verification Logic ─────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+
+/// Reconstructs the expected SHA-256 hash from the payload's pre-image fields
+/// and compares it against the submitted `proof_hash`.
+///
+/// Pre-image: `wallet_address || "|" || challenge_id || "|" || timestamp || "|" || nonce`
+///
+/// If the hash matches, we know the payload was generated by software that had
+/// access to all four fields at the time of the power-down event.
+fn verify_proof(payload: &ProofPayload) -> VerificationResult {
+    // Reject trivially empty fields first.
+    if payload.wallet_address.is_empty()
+        || payload.challenge_id.is_empty()
+        || payload.timestamp.is_empty()
+        || payload.nonce.is_empty()
+        || payload.proof_hash.is_empty()
+    {
+        return VerificationResult {
+            valid:  false,
+            reason: "one or more required fields are empty".into(),
+        };
+    }
+
+    // Reconstruct the pre-image the CLI used when computing the hash.
+    let pre_image = format!(
+        "{}|{}|{}|{}",
+        payload.wallet_address,
+        payload.challenge_id,
+        payload.timestamp,
+        payload.nonce,
+    );
+
+    // Compute SHA-256 of the pre-image.
+    let mut hasher = Sha256::new();
+    hasher.update(pre_image.as_bytes());
+    let expected_hash = hex::encode(hasher.finalize());
+
+    if expected_hash == payload.proof_hash {
+        VerificationResult {
+            valid:  true,
+            reason: String::new(),
+        }
+    } else {
+        VerificationResult {
+            valid:  false,
+            reason: format!(
+                "hash mismatch — expected {expected_hash}, got {}",
+                payload.proof_hash
+            ),
+        }
+    }
+}

@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "oracle",
+    "acoustic_cli",
+    # The Soroban contract is built separately with the wasm32 target,
+    # so it is excluded from the default workspace build to avoid
+    # std/no_std conflicts. Build it independently with:
+    #   cd contracts/negawatt_escrow && cargo build --target wasm32-unknown-unknown --release
+]
+
+[workspace.package]
+version     = "0.1.0"
+edition     = "2021"
+authors     = ["EchoGrid Hackathon Team"]

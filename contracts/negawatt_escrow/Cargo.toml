@@ -1,0 +1,30 @@
+[package]
+name    = "negawatt_escrow"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]   # Required for Soroban: compiled to a .wasm shared library
+
+[dependencies]
+# soroban-sdk provides the entire Soroban contract API:
+#   Env, Symbol, Map, token client, auth, events, etc.
+soroban-sdk = { version = "21.0.0", features = ["alloc"] }
+
+[dev-dependencies]
+# soroban-sdk's test utilities give us an in-process contract sandbox
+# with multi-contract invocation, ledger mocking, and auth simulation.
+soroban-sdk = { version = "21.0.0", features = ["testutils", "alloc"] }
+
+[profile.release]
+# Optimise heavily for .wasm size — judges download from testnet!
+opt-level     = "z"       # minimise binary size
+overflow-checks = true    # keep arithmetic safety in prod
+debug         = false
+strip         = true
+
+[profile.release-with-logs]
+# Separate profile to retain diagnostic logs during demo recording.
+inherits = "release"
+debug    = true
+strip    = false

@@ -1,0 +1,17 @@
+# .cargo/config.toml — EchoGrid workspace Cargo configuration
+
+[env]
+# RUST_MIN_STACK is no longer needed: we use the MSVC toolchain which does not
+# have the 2 MB default-stack limitation that caused STATUS_STACK_BUFFER_OVERRUN
+# on Windows/GNU with large proc-macro trees.
+
+[build]
+# Limit parallel codegen units to reduce peak memory usage on resource-
+# constrained machines. Remove this for faster builds on machines with >16 GB RAM.
+jobs = 4
+# Explicitly target the MSVC ABI so that rust-analyzer (and cargo check) always
+# analyse against the MSVC stdlib — preventing silent fallback to the GNU target
+# which triggers OS error 1455 (paging-file-too-small) when mmap-ing .rmeta files.
+# target = "x86_64-pc-windows-msvc"  # Commented out: project uses the GNU toolchain (see rust-toolchain.toml)
+
+

@@ -1,0 +1,49 @@
+[package]
+name    = "echogrid-oracle"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "oracle"
+path = "src/main.rs"
+
+[dependencies]
+# ── Web server ───────────────────────────────────────────────────────────────
+axum            = { version = "0.7", features = ["json"] }
+tokio           = { version = "1",   features = ["full"] }
+tower           = "0.4"
+tower-http      = { version = "0.5", features = ["cors", "trace"] }
+
+# ── Serialisation ────────────────────────────────────────────────────────────
+serde           = { version = "1",   features = ["derive"] }
+serde_json      = "1"
+
+# ── Cryptography — proof verification ────────────────────────────────────────
+sha2            = "0.10"   # SHA-256 for proof hash reconstruction
+hex             = "0.4"    # hex encoding for proof strings
+
+# ── Stellar / Soroban SDK ────────────────────────────────────────────────────
+# For live-network mode (--features live-network) you would add the Stellar
+# Rust SDK here.  The actual crate is `stellar` (or use stellar-xdr + horizon
+# HTTP calls directly).  For the hackathon MVP we simulate the call in mock
+# mode so no Stellar dependency is needed at compile time.
+#
+# Example (live-network feature only):
+#   stellar-xdr  = { version = "0.0.16", optional = true }
+#   reqwest      = { version = "0.11", features = ["json"], optional = true }
+
+# ── Observability ────────────────────────────────────────────────────────────
+tracing             = "0.1"
+tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
+
+# ── Config ───────────────────────────────────────────────────────────────────
+dotenvy = "0.15"
+
+# ── Error handling ───────────────────────────────────────────────────────────
+thiserror = "1"
+anyhow    = "1"
+
+[features]
+# Activate this feature for a full end-to-end demo against Stellar Testnet.
+# live-network = ["stellar-xdr", "reqwest"]  — uncomment when adding real SDK deps
+live-network = []

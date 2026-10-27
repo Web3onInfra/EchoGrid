@@ -1,0 +1,13 @@
+# EchoGrid uses the GNU toolchain on Windows (no VS Build Tools / link.exe required).
+# The RUST_MIN_STACK env var in .cargo/config.toml works around the default
+# small stack size that causes STATUS_STACK_BUFFER_OVERRUN with large proc-macro trees.
+#
+# IDE NOTE: rust-analyzer false errors ("cannot find core/std") stem from Windows
+# refusing to mmap the GNU .rmeta stdlib files when the paging file is too small
+# (OS error 1455). Fix: increase the Windows paging file to ≥8 GB (see README).
+# Alternatively, install VS Build Tools and switch to stable-x86_64-pc-windows-msvc.
+[toolchain]
+channel = "stable-x86_64-pc-windows-gnu"
+targets = [
+    "wasm32-unknown-unknown",  # Required for Soroban contract compilation
+]
