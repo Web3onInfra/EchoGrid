@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  filter:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.changes.outputs.rust }}
+      python: ${{ steps.changes.outputs.python }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Path Filter
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            rust:
+              - 'oracle/**'
+              - 'acoustic_cli/**'
+              - 'spikes/**'
+              - 'Cargo.*'
+              - '.cargo/**'
+              - '.github/workflows/**'
+            python:
+              - 'research/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/**'
+
+  rust:
+    name: Rust CI
+    needs: filter
+    if: ${{ needs.filter.outputs.rust == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Unit Tests
+        run: cargo test --workspace
+
+  python:
+    name: Python CI
+    needs: filter
+    if: ${{ needs.filter.outputs.python == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Lint and Test (or no-op placeholder)
+        run: |
+          if [ -f "research/hum_detection/pyproject.toml" ]; then
+            cd research/hum_detection
+            uv run ruff check .
+            uv run ruff format --check .
+            uv run pytest
+          elif [ -f "pyproject.toml" ]; then
+            uv run ruff check .
+            uv run ruff format --check .
+            uv run pytest
+          else
+            echo "Python project not yet scaffolded (PR 1 baseline passed)."
+            exit 0
+          fi

@@ -4,12 +4,7 @@
 //!   POST /api/v1/proof  — receives a Proof-of-Power-Down, verifies it,
 //!                          and triggers an on-chain NegaWatt payout.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
 
@@ -30,7 +25,7 @@ use crate::{
 ///   2. Check the challenge_id is active (not expired, not already claimed).
 ///   3. Call `trigger_payout` to move USDC from the escrow contract to the user.
 pub async fn submit_proof(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Json(payload): Json<ProofPayload>,
 ) -> impl IntoResponse {
     info!(
@@ -74,13 +69,17 @@ pub async fn submit_proof(
         Ok(_) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(OracleResponse::err("proof_hash must be 32 bytes (64 hex chars)")),
+                Json(OracleResponse::err(
+                    "proof_hash must be 32 bytes (64 hex chars)",
+                )),
             );
         }
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(OracleResponse::err(format!("proof_hash hex decode failed: {e}"))),
+                Json(OracleResponse::err(format!(
+                    "proof_hash hex decode failed: {e}"
+                ))),
             );
         }
     };
@@ -143,7 +142,7 @@ fn verify_proof(payload: &ProofPayload) -> VerificationResult {
         || payload.proof_hash.is_empty()
     {
         return VerificationResult {
-            valid:  false,
+            valid: false,
             reason: "one or more required fields are empty".into(),
         };
     }
@@ -151,10 +150,7 @@ fn verify_proof(payload: &ProofPayload) -> VerificationResult {
     // Reconstruct the pre-image the CLI used when computing the hash.
     let pre_image = format!(
         "{}|{}|{}|{}",
-        payload.wallet_address,
-        payload.challenge_id,
-        payload.timestamp,
-        payload.nonce,
+        payload.wallet_address, payload.challenge_id, payload.timestamp, payload.nonce,
     );
 
     // Compute SHA-256 of the pre-image.
@@ -164,12 +160,12 @@ fn verify_proof(payload: &ProofPayload) -> VerificationResult {
 
     if expected_hash == payload.proof_hash {
         VerificationResult {
-            valid:  true,
+            valid: true,
             reason: String::new(),
         }
     } else {
         VerificationResult {
-            valid:  false,
+            valid: false,
             reason: format!(
                 "hash mismatch — expected {expected_hash}, got {}",
                 payload.proof_hash
