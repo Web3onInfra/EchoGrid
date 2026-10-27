@@ -18,3 +18,8 @@ report:
 # Run ON/OFF band SNR analysis
 band-snr:
     cd research/hum_detection; uv run python -m echogrid_hum.band_snr
+
+# Run detector evaluation benchmark
+eval:
+    cd research/hum_detection; uv run python -m echogrid_hum.eval
+
