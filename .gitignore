@@ -8,7 +8,8 @@ __pycache__/
 *$py.class
 
 # Raw data and audio recordings (Phase 0 rule: Never commit raw audio)
-data/
+data/*
+!data/MANIFEST.md
 *.wav
 *.mp3
 *.flac
