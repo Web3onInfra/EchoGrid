@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>EchoGrid Audio Capture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 700px; margin: 24px auto; padding: 0 16px; color: #1e293b; background: #f8fafc; }
+    .card { background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .btn { padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; margin-right: 6px; }
+    .btn-p { background: #0284c7; color: white; } .btn-d { background: #e11d48; color: white; }
+    .btn-s { background: #16a34a; color: white; } .btn-w { background: #ea580c; color: white; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    select { width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; }
+    pre { background: #0f172a; color: #38bdf8; padding: 10px; border-radius: 6px; font-size: 0.8rem; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h2>EchoGrid Mic Capture</h2>
+  <div class="card">
+    <div class="grid">
+      <div><label>Source</label><select id="src"><option value="air_conditioner">AC</option><option value="refrigerator">Fridge</option><option value="pump">Pump</option><option value="fan">Fan</option><option value="background">Background</option></select></div>
+      <div><label>Distance</label><select id="dist"><option value="0.5">0.5m</option><option value="2.0">2.0m</option><option value="4.0">4.0m</option></select></div>
+    </div>
+    <button id="start" class="btn btn-p">Start Recording</button>
+    <button id="on" class="btn btn-s" disabled>Mark ON</button>
+    <button id="off" class="btn btn-w" disabled>Mark OFF</button>
+    <button id="stop" class="btn btn-d" disabled>Stop & Download</button>
+    <p id="st" style="font-size: 0.85rem; color: #64748b; margin: 8px 0 0 0;">Status: Ready</p>
+  </div>
+  <div class="card"><label>Events</label><div id="evs" style="font-family: monospace; font-size: 0.85rem; margin-top: 6px;">None</div></div>
+  <div class="card"><label>Diagnostics</label><pre id="diag">Click Start Recording to query mic getSettings().</pre></div>
+  <script>
+    let actx, stream, sp, bufs = [], t0 = 0, evts = [];
+    const $ = id => document.getElementById(id);
+    const logEv = type => { if (!t0) return; evts.push({ type, timestamp_s: +((performance.now() - t0) / 1000).toFixed(2) }); $('evs').textContent = JSON.stringify(evts); };
+    $('start').onclick = async () => {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      $('diag').textContent = JSON.stringify({ audioContextSampleRate: actx.sampleRate, trackSettings: stream.getAudioTracks()[0].getSettings() }, null, 2);
+      bufs = []; evts = [];
+      const srcNode = actx.createMediaStreamSource(stream);
+      sp = actx.createScriptProcessor(4096, 1, 1);
+      sp.onaudioprocess = e => bufs.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      srcNode.connect(sp); sp.connect(actx.destination);
+      t0 = performance.now(); logEv('ON');
+      $('st').textContent = `Recording (${actx.sampleRate}Hz)...`;
+      $('start').disabled = true; $('on').disabled = false; $('off').disabled = false; $('stop').disabled = false;
+    };
+    $('on').onclick = () => logEv('ON'); $('off').onclick = () => logEv('OFF');
+    $('stop').onclick = () => {
+      if (sp) sp.disconnect(); if (stream) stream.getTracks().forEach(t => t.stop());
+      const len = bufs.reduce((a, b) => a + b.length, 0), merged = new Float32Array(len);
+      let o = 0; for (const b of bufs) { merged.set(b, o); o += b.length; }
+      const bname = `${$('src').value}_${$('dist').value}m_${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      dl(encodeWAV(merged, actx.sampleRate), `${bname}.wav`);
+      dl(new Blob([JSON.stringify({ audio_file: `${bname}.wav`, sample_rate: actx.sampleRate, duration_s: +(len / actx.sampleRate).toFixed(3), settings: JSON.parse($('diag').textContent), metadata: { source: $('src').value, distance_m: +$('dist').value }, events: evts }, null, 2)], { type: 'application/json' }), `${bname}.json`);
+      $('st').textContent = `Saved ${bname}`;
+      $('start').disabled = false; $('on').disabled = true; $('off').disabled = true; $('stop').disabled = true;
+    };
+    function encodeWAV(s, sr) {
+      const b = new ArrayBuffer(44 + s.length * 2), v = new DataView(b);
+      const w = (off, str) => { for (let i = 0; i < str.length; i++) v.setUint8(off + i, str.charCodeAt(i)); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + s.length * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      w(36, 'data'); v.setUint32(40, s.length * 2, true);
+      for (let i = 0, off = 44; i < s.length; i++, off += 2) {
+        const x = Math.max(-1, Math.min(1, s[i]));
+        v.setInt16(off, x < 0 ? x * 0x8000 : x * 0x7FFF, true);
+      }
+      return new Blob([v], { type: 'audio/wav' });
+    }
+    function dl(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+  </script>
+</body>
+</html>
