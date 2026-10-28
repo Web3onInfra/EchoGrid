@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! # EchoGrid Oracle — Shared Types
 //!
 //! All JSON-serialisable structs shared between the HTTP layer and the

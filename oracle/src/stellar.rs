@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! # Stellar Interaction Layer — AgentPay
 //!
 //! This module handles everything Stellar-related:

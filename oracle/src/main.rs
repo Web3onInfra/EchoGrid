@@ -9,7 +9,7 @@ pub mod config;
 pub mod error;
 pub mod payout;
 pub mod proof;
-mod routes;
+pub mod routes;
 pub mod state;
 mod stellar;
 mod types;
@@ -27,6 +27,7 @@ use tower_http::{
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use crate::chain::queue::SubmissionQueue;
 use crate::config::AppConfig;
 use crate::state::{Clock, MemoryStore, SqliteStore, StateStore, SystemClock};
 
@@ -36,6 +37,7 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     pub store: Arc<dyn StateStore>,
     pub clock: Arc<dyn Clock>,
+    pub queue: Option<Arc<SubmissionQueue>>,
 }
 
 impl Default for AppState {
@@ -47,6 +49,7 @@ impl Default for AppState {
             ),
             store: Arc::new(MemoryStore::new()),
             clock: Arc::new(SystemClock),
+            queue: None,
         }
     }
 }
@@ -76,6 +79,40 @@ async fn main() {
     };
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
+    // ── Initialize submission queue if configured ──────────────────────────────
+    let queue: Option<Arc<SubmissionQueue>> = if let (Some(secret), Some(contract_id)) =
+        (&config.oracle_secret_key, &config.contract_id)
+    {
+        use secrecy::ExposeSecret;
+        if let Ok(pk) = stellar_strkey::ed25519::PrivateKey::from_string(secret.expose_secret()) {
+            let signing_key = ed25519_dalek::SigningKey::from_bytes(&pk.0);
+            let public_strkey =
+                stellar_strkey::ed25519::PublicKey(signing_key.verifying_key().to_bytes());
+            let oracle_account = public_strkey.to_string().as_str().to_string();
+            let rpc = crate::chain::rpc::SorobanRpcClient::new(
+                &config.rpc_url,
+                std::time::Duration::from_secs(config.sync_wait_timeout_seconds),
+            );
+            let pipeline = Arc::new(crate::chain::pipeline::SubmitPipeline::new(
+                rpc.clone(),
+                signing_key,
+                contract_id.clone(),
+                config.network_passphrase.clone(),
+                std::time::Duration::from_secs(config.sync_wait_timeout_seconds),
+            ));
+            Some(Arc::new(SubmissionQueue::new(
+                pipeline,
+                rpc,
+                oracle_account,
+                None,
+            )))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // ── Build the router ───────────────────────────────────────────────────────
     let app = Router::new()
         // Health probe
@@ -88,6 +125,7 @@ async fn main() {
             config: Arc::new(config),
             store,
             clock,
+            queue,
         })
         .layer(TraceLayer::new_for_http())
         .layer(
@@ -100,13 +138,9 @@ async fn main() {
     info!(mode = %mode, "EchoGrid Oracle listening on http://{addr}");
     info!("   GET  /api/v1/challenge — issue challenge nonce");
     info!("   POST /api/v1/proof     — submit Proof-of-Power-Down");
-    info!("   GET  /api/v1/health    — liveness check");
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .unwrap_or_else(|e| panic!("Failed to bind TCP listener to {addr}: {e}"));
-
-    axum::serve(listener, app)
-        .await
-        .expect("Axum server crashed unexpectedly");
+        .unwrap_or_else(|e| panic!("Failed to bind to {addr}: {e}"));
+    axum::serve(listener, app).await.unwrap();
 }
