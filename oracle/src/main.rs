@@ -2,19 +2,13 @@
 //!
 //! Boots the Axum HTTP server, configures middleware (CORS, tracing), and
 //! registers all routes.
-//!
-//! ## Environment variables
-//! | Variable              | Required (live-network) | Description                        |
-//! |-----------------------|-------------------------|------------------------------------|
-//! | `ORACLE_SECRET_KEY`   | Yes                     | Ed25519 secret key (S...)          |
-//! | `CONTRACT_ID`         | Yes                     | Deployed NegaWattEscrow address    |
-//! | `HORIZON_URL`         | No (defaults testnet)   | Horizon REST API base URL          |
-//! | `TOKEN_CONTRACT_ID`   | Yes                     | USDC-T SAC contract ID             |
-//! | `PORT`                | No (defaults 8080)      | HTTP listen port                   |
 
+pub mod config;
 mod routes;
 mod stellar;
 mod types;
+
+use std::sync::Arc;
 
 use axum::{
     routing::{get, post},
@@ -27,10 +21,24 @@ use tower_http::{
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use crate::config::AppConfig;
+
 /// Shared application state threaded through all Axum handlers.
-/// Currently empty for the MVP, but ready to hold a DB pool, config, etc.
 #[derive(Clone)]
-pub struct AppState;
+pub struct AppState {
+    pub config: Arc<AppConfig>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            config: Arc::new(
+                AppConfig::from_env_source(|_| None)
+                    .expect("Default fallback configuration must always be valid"),
+            ),
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -44,12 +52,9 @@ async fn main() {
     // ── Load .env file if present (ignored in production) ─────────────────────
     let _ = dotenvy::dotenv(); // Not fatal if missing
 
-    let port: u16 = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(8080);
-
-    let addr = format!("0.0.0.0:{port}");
+    let config = AppConfig::from_env().expect("Failed to load and validate configuration");
+    let addr = format!("{}:{}", config.host, config.port);
+    let mode = config.mode;
 
     // ── Build the router ───────────────────────────────────────────────────────
     let app = Router::new()
@@ -57,7 +62,9 @@ async fn main() {
         .route("/api/v1/health", get(routes::health))
         // The AgentPay endpoint — receives Proofs-of-Power-Down.
         .route("/api/v1/proof", post(routes::submit_proof))
-        .with_state(AppState)
+        .with_state(AppState {
+            config: Arc::new(config),
+        })
         // Tracing middleware — every request logged with latency.
         .layer(TraceLayer::new_for_http())
         // CORS — allow the web demo frontend to call us directly.
@@ -68,13 +75,13 @@ async fn main() {
                 .allow_headers(Any),
         );
 
-    info!("EchoGrid Oracle listening on http://{addr}");
+    info!(mode = %mode, "EchoGrid Oracle listening on http://{addr}");
     info!("   POST /api/v1/proof   — submit Proof-of-Power-Down");
     info!("   GET  /api/v1/health  — liveness check");
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect("Failed to bind TCP listener — is port {port} already in use?");
+        .unwrap_or_else(|e| panic!("Failed to bind TCP listener to {addr}: {e}"));
 
     axum::serve(listener, app)
         .await
