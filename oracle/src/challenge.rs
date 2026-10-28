@@ -55,6 +55,10 @@ pub async fn get_challenge(
 ) -> Result<Json<ChallengeResponse>, ApiError> {
     validate_stellar_address(&query.wallet)?;
 
+    state
+        .rate_limiter
+        .check_wallet_challenge(&query.wallet, state.config.challenge_rate_per_min)?;
+
     let now = state.clock.now();
     let ttl_seconds = state.config.challenge_ttl_seconds;
     let expires_at = now + chrono::Duration::seconds(ttl_seconds as i64);

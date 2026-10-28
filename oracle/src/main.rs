@@ -9,6 +9,7 @@ pub mod config;
 pub mod error;
 pub mod payout;
 pub mod proof;
+pub mod rate_limit;
 pub mod routes;
 pub mod state;
 mod stellar;
@@ -43,18 +44,21 @@ pub struct AppState {
     pub store: Arc<dyn StateStore>,
     pub clock: Arc<dyn Clock>,
     pub queue: Option<Arc<SubmissionQueue>>,
+    pub rate_limiter: Arc<rate_limit::RateLimiter>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
+        let clock = Arc::new(SystemClock);
         Self {
             config: Arc::new(
                 AppConfig::from_env_source(|_| None)
                     .expect("Default fallback configuration must always be valid"),
             ),
             store: Arc::new(MemoryStore::new()),
-            clock: Arc::new(SystemClock),
+            clock: clock.clone(),
             queue: None,
+            rate_limiter: Arc::new(rate_limit::RateLimiter::new(clock)),
         }
     }
 }
@@ -81,6 +85,24 @@ pub fn build_cors_layer(allowed_origins: &[String]) -> CorsLayer {
     }
 
     layer
+}
+
+/// Middleware enforcing per-IP rate limits across all incoming requests.
+pub async fn ip_rate_limit_middleware(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, crate::error::ApiError> {
+    let peer_addr = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0);
+    let client_ip =
+        crate::rate_limit::extract_client_ip(req.headers(), peer_addr, state.config.trust_proxy);
+    state
+        .rate_limiter
+        .check_ip(client_ip, state.config.rate_limit_per_min)?;
+    Ok(next.run(req).await)
 }
 
 /// Middleware injecting standard HTTP security headers on all responses.
@@ -119,6 +141,10 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/v1/challenge", get(challenge::get_challenge))
         // The AgentPay endpoint
         .route("/api/v1/proof", post(routes::submit_proof))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            ip_rate_limit_middleware,
+        ))
         .layer(middleware::from_fn(security_headers_middleware))
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(TimeoutLayer::new(timeout_duration))
@@ -186,11 +212,13 @@ async fn main() {
         None
     };
 
+    let rate_limiter = Arc::new(rate_limit::RateLimiter::new(clock.clone()));
     let state = AppState {
         config: Arc::new(config),
         store,
         clock,
         queue,
+        rate_limiter,
     };
 
     let app = build_app(state);
@@ -219,12 +247,101 @@ mod tests {
         let mut env = HashMap::new();
         env.insert("ALLOWED_ORIGINS".to_string(), origins.join(","));
         let config = AppConfig::from_env_source(|k| env.get(k).cloned()).unwrap();
+        let clock = Arc::new(SystemClock);
+        let rate_limiter = Arc::new(rate_limit::RateLimiter::new(clock.clone()));
         AppState {
             config: Arc::new(config),
             store: Arc::new(MemoryStore::new()),
-            clock: Arc::new(SystemClock),
+            clock,
             queue: None,
+            rate_limiter,
         }
+    }
+
+    #[tokio::test]
+    async fn test_ip_rate_limiting_middleware() {
+        let mut env = HashMap::new();
+        env.insert("ALLOWED_ORIGINS".to_string(), "*".to_string());
+        env.insert("RATE_LIMIT_PER_MIN".to_string(), "2".to_string());
+        let config = AppConfig::from_env_source(|k| env.get(k).cloned()).unwrap();
+        let clock = Arc::new(SystemClock);
+        let rate_limiter = Arc::new(rate_limit::RateLimiter::new(clock.clone()));
+        let state = AppState {
+            config: Arc::new(config),
+            store: Arc::new(MemoryStore::new()),
+            clock,
+            queue: None,
+            rate_limiter,
+        };
+        let app = build_app(state);
+
+        // Request 1: OK
+        let req1 = Request::builder()
+            .uri("/api/v1/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp1 = app.clone().oneshot(req1).await.unwrap();
+        assert_eq!(resp1.status(), StatusCode::OK);
+
+        // Request 2: OK
+        let req2 = Request::builder()
+            .uri("/api/v1/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp2 = app.clone().oneshot(req2).await.unwrap();
+        assert_eq!(resp2.status(), StatusCode::OK);
+
+        // Request 3: 429 Too Many Requests
+        let req3 = Request::builder()
+            .uri("/api/v1/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp3 = app.clone().oneshot(req3).await.unwrap();
+        assert_eq!(resp3.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn test_wallet_challenge_rate_limiting_endpoint() {
+        let mut env = HashMap::new();
+        env.insert("ALLOWED_ORIGINS".to_string(), "*".to_string());
+        env.insert("CHALLENGE_RATE_PER_MIN".to_string(), "2".to_string());
+        let config = AppConfig::from_env_source(|k| env.get(k).cloned()).unwrap();
+        let clock = Arc::new(SystemClock);
+        let rate_limiter = Arc::new(rate_limit::RateLimiter::new(clock.clone()));
+        let state = AppState {
+            config: Arc::new(config),
+            store: Arc::new(MemoryStore::new()),
+            clock,
+            queue: None,
+            rate_limiter,
+        };
+        let app = build_app(state);
+
+        let wallet = "GA4ZH5HAQ77O2KGZJE2PJ5B4FMKVDGWZUZI7HVLTXPTPCEQGXXLDEHXT";
+
+        // Challenge 1: OK
+        let req1 = Request::builder()
+            .uri(format!("/api/v1/challenge?wallet={wallet}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp1 = app.clone().oneshot(req1).await.unwrap();
+        assert_eq!(resp1.status(), StatusCode::OK);
+
+        // Challenge 2: OK
+        let req2 = Request::builder()
+            .uri(format!("/api/v1/challenge?wallet={wallet}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp2 = app.clone().oneshot(req2).await.unwrap();
+        assert_eq!(resp2.status(), StatusCode::OK);
+
+        // Challenge 3: 429 Too Many Requests
+        let req3 = Request::builder()
+            .uri(format!("/api/v1/challenge?wallet={wallet}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp3 = app.clone().oneshot(req3).await.unwrap();
+        assert_eq!(resp3.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]
