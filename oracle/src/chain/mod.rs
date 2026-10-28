@@ -3,4 +3,5 @@
 //! RPC client, transaction assembly, submission pipeline, and contract views.
 
 pub mod builder;
+pub mod pipeline;
 pub mod rpc;
