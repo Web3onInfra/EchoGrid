@@ -1,0 +1,16 @@
+{
+  "network": "testnet",
+  "rpc_url": "https://soroban-testnet.stellar.org",
+  "network_passphrase": "Test SDF Network ; September 2015",
+  "contract_id": "CANCKQXV4H6PCJ6DTAOIVMGUFYN2J4GTHJWFEUYZEHP3RFZBZHTBF6SX",
+  "token_id": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "oracle_public_key": "GCJCQGHJMGCUU5YNB67WP3ORARHH6THZ2V6G2CXMJGB5JHP7LEDMWWHW",
+  "municipality_public_key": "GCJCQGHJMGCUU5YNB67WP3ORARHH6THZ2V6G2CXMJGB5JHP7LEDMWWHW",
+  "bounty_stroops": 10000000,
+  "initial_deposit_stroops": 50000000,
+  "wasm_hash": "30d7c400302bfa77d88a5321b48bc7ba64c439f50bd6d07d9bc0a74b26a8e2ea",
+  "deployment_tx_hash": "355b6c5df0d03dcbcdaf98891a3935e631d265b0f2fe5a4fce24fd4c205b1622",
+  "initialization_tx_hash": "0e3e9f7f74d8588e7ba91d02fee07d96423201b8f5f11aecc99a4e968e62f1a2",
+  "deposit_tx_hash": "72210d385aa0079b796f675f69ebefee1b35f75183d1573dd7cefdb0cbef041d",
+  "explorer_url": "https://stellar.expert/explorer/testnet/contract/CANCKQXV4H6PCJ6DTAOIVMGUFYN2J4GTHJWFEUYZEHP3RFZBZHTBF6SX"
+}
