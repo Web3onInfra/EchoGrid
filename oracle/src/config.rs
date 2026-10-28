@@ -39,6 +39,12 @@ pub enum ConfigError {
     },
     #[error("Unknown ORACLE_MODE '{0}'. Expected 'mock' or 'live'")]
     InvalidOracleMode(String),
+    #[error("Wildcard '*' in ALLOWED_ORIGINS is forbidden in live mode")]
+    WildcardOriginForbidden,
+    #[error("Missing required ALLOWED_ORIGINS in live mode")]
+    MissingAllowedOrigins,
+    #[error("Localhost origins in ALLOWED_ORIGINS are forbidden in live mode")]
+    LocalhostOriginForbidden,
 }
 
 /// Strongly-typed runtime configuration for the oracle service.
@@ -54,6 +60,7 @@ pub struct AppConfig {
     pub token_id: Option<String>,
     pub oracle_secret_key: Option<SecretString>,
     pub allowed_origins: Vec<String>,
+    pub request_timeout_seconds: u64,
     pub challenge_ttl_seconds: u64,
     pub cooldown_seconds: u64,
     pub wallet_daily_claim_limit: u32,
@@ -130,7 +137,19 @@ impl AppConfig {
                     .filter(|item| !item.is_empty())
                     .collect()
             })
-            .unwrap_or_else(|| vec!["*".to_string()]);
+            .unwrap_or_else(|| {
+                if mode == OracleMode::Live {
+                    Vec::new()
+                } else {
+                    vec![
+                        "http://localhost:3000".to_string(),
+                        "http://localhost:5173".to_string(),
+                        "http://127.0.0.1:3000".to_string(),
+                    ]
+                }
+            });
+
+        let request_timeout_seconds = parse_int_or(&get_var, "REQUEST_TIMEOUT_SECONDS", 30)?;
 
         let challenge_ttl_seconds = parse_int_or(&get_var, "CHALLENGE_TTL_SECONDS", 120)?;
         let cooldown_seconds = parse_int_or(&get_var, "COOLDOWN_SECONDS", 600)?;
@@ -156,6 +175,7 @@ impl AppConfig {
             token_id,
             oracle_secret_key,
             allowed_origins,
+            request_timeout_seconds,
             challenge_ttl_seconds,
             cooldown_seconds,
             wallet_daily_claim_limit,
@@ -207,6 +227,18 @@ impl AppConfig {
                     var: "TOKEN_CONTRACT_ID",
                     reason: "must start with 'C' and be 56 characters",
                 });
+            }
+
+            if self.allowed_origins.is_empty() {
+                return Err(ConfigError::MissingAllowedOrigins);
+            }
+            for origin in &self.allowed_origins {
+                if origin == "*" {
+                    return Err(ConfigError::WildcardOriginForbidden);
+                }
+                if origin.contains("localhost") || origin.contains("127.0.0.1") {
+                    return Err(ConfigError::LocalhostOriginForbidden);
+                }
             }
         }
 
@@ -305,6 +337,7 @@ mod tests {
             "TOKEN_CONTRACT_ID".into(),
             "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".into(),
         );
+        env_map.insert("ALLOWED_ORIGINS".into(), "https://echogrid.app".into());
 
         let config = AppConfig::from_env_source(|k| env_map.get(k).cloned()).unwrap();
         assert_eq!(config.mode, OracleMode::Live);
@@ -312,5 +345,70 @@ mod tests {
         let debug_str = format!("{:?}", config);
         assert!(!debug_str.contains("SB7NFFU342E7GZ2U2V535HILPFEZJ6R3N4O5P6Q7R8S9T0U1V2W3X4Y5"));
         assert!(debug_str.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn test_live_mode_wildcard_origin_rejected() {
+        let mut env_map = HashMap::<String, String>::new();
+        env_map.insert("ORACLE_MODE".into(), "live".into());
+        env_map.insert(
+            "ORACLE_SECRET_KEY".into(),
+            "SB7NFFU342E7GZ2U2V535HILPFEZJ6R3N4O5P6Q7R8S9T0U1V2W3X4Y5".into(),
+        );
+        env_map.insert(
+            "CONTRACT_ID".into(),
+            "CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF".into(),
+        );
+        env_map.insert(
+            "TOKEN_CONTRACT_ID".into(),
+            "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".into(),
+        );
+        env_map.insert("ALLOWED_ORIGINS".into(), "*".into());
+
+        let err = AppConfig::from_env_source(|k| env_map.get(k).cloned()).unwrap_err();
+        assert_eq!(err, ConfigError::WildcardOriginForbidden);
+    }
+
+    #[test]
+    fn test_live_mode_localhost_origin_rejected() {
+        let mut env_map = HashMap::<String, String>::new();
+        env_map.insert("ORACLE_MODE".into(), "live".into());
+        env_map.insert(
+            "ORACLE_SECRET_KEY".into(),
+            "SB7NFFU342E7GZ2U2V535HILPFEZJ6R3N4O5P6Q7R8S9T0U1V2W3X4Y5".into(),
+        );
+        env_map.insert(
+            "CONTRACT_ID".into(),
+            "CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF".into(),
+        );
+        env_map.insert(
+            "TOKEN_CONTRACT_ID".into(),
+            "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".into(),
+        );
+        env_map.insert("ALLOWED_ORIGINS".into(), "http://localhost:3000".into());
+
+        let err = AppConfig::from_env_source(|k| env_map.get(k).cloned()).unwrap_err();
+        assert_eq!(err, ConfigError::LocalhostOriginForbidden);
+    }
+
+    #[test]
+    fn test_live_mode_missing_origins_rejected() {
+        let mut env_map = HashMap::<String, String>::new();
+        env_map.insert("ORACLE_MODE".into(), "live".into());
+        env_map.insert(
+            "ORACLE_SECRET_KEY".into(),
+            "SB7NFFU342E7GZ2U2V535HILPFEZJ6R3N4O5P6Q7R8S9T0U1V2W3X4Y5".into(),
+        );
+        env_map.insert(
+            "CONTRACT_ID".into(),
+            "CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF".into(),
+        );
+        env_map.insert(
+            "TOKEN_CONTRACT_ID".into(),
+            "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".into(),
+        );
+
+        let err = AppConfig::from_env_source(|k| env_map.get(k).cloned()).unwrap_err();
+        assert_eq!(err, ConfigError::MissingAllowedOrigins);
     }
 }
