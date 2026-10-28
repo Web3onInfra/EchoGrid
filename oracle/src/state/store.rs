@@ -5,6 +5,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
+use crate::state::limits::{LimitConfig, LimitError};
 use crate::state::types::{Challenge, Claim, PayoutStatus, StoreError};
 
 #[async_trait]
@@ -34,4 +35,20 @@ pub trait StateStore: Send + Sync {
         since: DateTime<Utc>,
     ) -> Result<u32, StoreError>;
     async fn get_daily_spent_and_reserved(&self, since: DateTime<Utc>) -> Result<i128, StoreError>;
+
+    /// Atomically validates limits (cooldown, daily claims, global cap) and reserves the claim.
+    async fn reserve_claim(
+        &self,
+        claim: Claim,
+        limits: &LimitConfig,
+        now: DateTime<Utc>,
+    ) -> Result<(), LimitError>;
+
+    /// Releases a reserved claim upon failure, freeing the reserved budget.
+    async fn release_claim(
+        &self,
+        id: &str,
+        reason: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError>;
 }
