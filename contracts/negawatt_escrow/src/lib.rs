@@ -50,6 +50,24 @@ pub enum Error {
 }
 
 // ---------------------------------------------------------------------------
+// ── Configuration Struct ───────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+
+/// Central configuration for contract roles, token, and safety limits.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Config {
+    pub municipality: Address,
+    pub oracle: Address,
+    pub token: Address,
+    pub bounty: i128,
+    pub per_payout_cap: i128,
+    pub window_len: u64,
+    pub window_budget: i128,
+    pub max_recipient_window_claims: u32,
+}
+
+// ---------------------------------------------------------------------------
 // ── Storage Key Enum ────────────────────────────────────────────────────────
 // ---------------------------------------------------------------------------
 
@@ -71,6 +89,12 @@ pub enum DataKey {
     /// Tracks whether a given Proof-of-Power-Down hash has already been paid
     /// — prevents replay attacks.
     ClaimUsed(BytesN<32>),
+    /// Global contract configuration struct.
+    Config,
+    /// Emergency circuit breaker pause status.
+    Paused,
+    /// Current window spend: (window_id, spent_amount).
+    CurrentWindowSpend,
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +167,25 @@ impl NegaWattEscrow {
             .set(&DataKey::BountyPerClaim, &bounty);
         env.storage().instance().set(&DataKey::Initialized, &true);
 
+        let cap = if bounty > 20_000_000 {
+            bounty
+        } else {
+            20_000_000
+        };
+        let budget = if cap > 200_000_000 { cap } else { 200_000_000 };
+        let config = Config {
+            municipality: municipality.clone(),
+            oracle: oracle.clone(),
+            token: token.clone(),
+            bounty,
+            per_payout_cap: cap,
+            window_len: 86_400,
+            window_budget: budget,
+            max_recipient_window_claims: 3,
+        };
+        env.storage().instance().set(&DataKey::Config, &config);
+        env.storage().instance().set(&DataKey::Paused, &false);
+
         Ok(())
     }
 
@@ -202,6 +245,11 @@ impl NegaWattEscrow {
         env.storage()
             .instance()
             .set(&DataKey::BountyPerClaim, &new_bounty);
+
+        if let Some(mut config) = env.storage().instance().get::<_, Config>(&DataKey::Config) {
+            config.bounty = new_bounty;
+            env.storage().instance().set(&DataKey::Config, &config);
+        }
 
         env.events().publish(
             (Symbol::new(&env, EVENT_BOUNTY_SET), municipality),
@@ -288,8 +336,46 @@ impl NegaWattEscrow {
     }
 
     // -----------------------------------------------------------------------
-    // ── Read-Only Views ──────────────────────────────────────────────────────
+    // ── Read-Only Views ────────────────────────────────----------------------
     // -----------------------------------------------------------------------
+
+    /// Returns the global Config struct.
+    pub fn get_config(env: Env) -> Result<Config, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::Config)
+            .ok_or(Error::NotInitialized)
+    }
+
+    /// Returns the current escrow pool balance of the held token (successor to escrow_balance).
+    pub fn pool_balance(env: Env) -> i128 {
+        Self::escrow_balance(env)
+    }
+
+    /// Returns whether emergency pause is active.
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    /// Returns the amount paid out in the current window.
+    pub fn window_spent(env: Env) -> i128 {
+        let (window_id, spent): (u64, i128) = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentWindowSpend)
+            .unwrap_or((0, 0));
+        let config = env.storage().instance().get::<_, Config>(&DataKey::Config);
+        if let Some(cfg) = config {
+            let current_window = env.ledger().timestamp() / cfg.window_len.max(1);
+            if current_window == window_id {
+                return spent;
+            }
+        }
+        0
+    }
 
     /// Returns the current escrow balance of the held token.
     pub fn escrow_balance(env: Env) -> i128 {
@@ -567,5 +653,51 @@ mod test {
         // Restrict auth so oracle signature is absent
         env.mock_auths(&[]);
         client.payout(&user, &proof);
+    }
+
+    #[test]
+    fn test_get_config_view() {
+        let (_, token_id, client, municipality, oracle, _) = setup();
+        let config = client.get_config();
+        assert_eq!(config.municipality, municipality);
+        assert_eq!(config.oracle, oracle);
+        assert_eq!(config.token, token_id);
+        assert_eq!(config.bounty, 100_i128);
+        assert_eq!(config.per_payout_cap, 20_000_000_i128);
+        assert_eq!(config.window_len, 86_400);
+        assert_eq!(config.window_budget, 200_000_000_i128);
+        assert_eq!(config.max_recipient_window_claims, 3);
+    }
+
+    #[test]
+    fn test_pool_balance_view() {
+        let (_, _, client, _, _, _) = setup();
+        assert_eq!(client.pool_balance(), client.escrow_balance());
+        client.deposit(&2_500_i128);
+        assert_eq!(client.pool_balance(), 2_500_i128);
+        assert_eq!(client.pool_balance(), client.escrow_balance());
+    }
+
+    #[test]
+    fn test_is_paused_view() {
+        let (_, _, client, _, _, _) = setup();
+        assert!(!client.is_paused());
+    }
+
+    #[test]
+    fn test_window_spent_view() {
+        let (_, _, client, _, _, _) = setup();
+        assert_eq!(client.window_spent(), 0_i128);
+    }
+
+    #[test]
+    fn test_get_config_uninitialized_fails() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, NegaWattEscrow);
+        let client = NegaWattEscrowClient::new(&env, &contract_id);
+        assert_eq!(
+            client.try_get_config().unwrap_err(),
+            Ok(Error::NotInitialized)
+        );
     }
 }
