@@ -95,6 +95,8 @@ pub enum DataKey {
     Paused,
     /// Current window spend: (window_id, spent_amount).
     CurrentWindowSpend,
+    /// Per-recipient claim count in a given window: (window_id, recipient).
+    RecipientClaims(u64, Address),
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +323,28 @@ impl NegaWattEscrow {
         Ok(())
     }
 
+    /// **Set Recipient Claim Limit** — Set max claims per recipient per window.
+    ///
+    /// Municipality-only.
+    pub fn set_recipient_claim_limit(env: Env, new_limit: u32) -> Result<(), Error> {
+        let _municipality = Self::require_municipality_role(&env)?;
+
+        if new_limit == 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        let mut config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .ok_or(Error::NotInitialized)?;
+
+        config.max_recipient_window_claims = new_limit;
+        env.storage().instance().set(&DataKey::Config, &config);
+
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // ── Oracle Function (AgentGuard: ROLE_ORACLE / AgentPay) ────────────────
     // -----------------------------------------------------------------------
@@ -395,6 +419,18 @@ impl NegaWattEscrow {
             return Err(Error::ExceedsWindowBudget);
         }
 
+        // Per-recipient claim limit per window
+        let recipient_claims_key = DataKey::RecipientClaims(current_window_id, recipient.clone());
+        let current_recipient_claims: u32 = env
+            .storage()
+            .temporary()
+            .get(&recipient_claims_key)
+            .unwrap_or(0);
+
+        if current_recipient_claims >= config.max_recipient_window_claims {
+            return Err(Error::ExceedsRecipientWindowLimit);
+        }
+
         // Sanity-check: make sure the escrow still has enough funds.
         let balance = TokenClient::new(&env, &token_id).balance(&env.current_contract_address());
         if balance < bounty {
@@ -413,6 +449,11 @@ impl NegaWattEscrow {
             &DataKey::CurrentWindowSpend,
             &(current_window_id, current_window_spent + bounty),
         );
+
+        // Update per-recipient claims count in temporary storage
+        env.storage()
+            .temporary()
+            .set(&recipient_claims_key, &(current_recipient_claims + 1));
 
         // Mark this proof as spent so it can never be replayed.
         // We use `persistent` storage so it survives ledger expiry TTLs.
@@ -471,6 +512,17 @@ impl NegaWattEscrow {
             if current_window == window_id {
                 return spent;
             }
+        }
+        0
+    }
+
+    /// Returns the number of claims by a recipient in the current window.
+    pub fn recipient_window_claims(env: Env, recipient: Address) -> u32 {
+        let config = env.storage().instance().get::<_, Config>(&DataKey::Config);
+        if let Some(cfg) = config {
+            let current_window = env.ledger().timestamp() / cfg.window_len.max(1);
+            let key = DataKey::RecipientClaims(current_window, recipient);
+            return env.storage().temporary().get(&key).unwrap_or(0);
         }
         0
     }
@@ -928,5 +980,93 @@ mod test {
         // Third payout now succeeds in the new window!
         client.payout(&user, &proof3);
         assert_eq!(client.window_spent(), 100_i128);
+    }
+
+    #[test]
+    fn test_set_recipient_claim_limit_success_and_invariants() {
+        let (_, _, client, _, _, _) = setup();
+        assert_eq!(client.get_config().max_recipient_window_claims, 3);
+
+        client.set_recipient_claim_limit(&5_u32);
+        assert_eq!(client.get_config().max_recipient_window_claims, 5);
+
+        // Limit == 0 fails
+        assert_eq!(
+            client.try_set_recipient_claim_limit(&0_u32).unwrap_err(),
+            Ok(Error::InvalidAmount)
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_recipient_claim_limit_auth_failure() {
+        let (env, _, client, _, _, _) = setup();
+        env.mock_auths(&[]);
+        client.set_recipient_claim_limit(&5_u32);
+    }
+
+    #[test]
+    fn test_recipient_claim_limit_hit_and_different_recipients_unaffected() {
+        let (env, _, client, _, _, user1) = setup();
+        let user2 = Address::generate(&env);
+        client.deposit(&5_000_i128);
+
+        let p1 = BytesN::from_array(&env, &[21u8; 32]);
+        let p2 = BytesN::from_array(&env, &[22u8; 32]);
+        let p3 = BytesN::from_array(&env, &[23u8; 32]);
+        let p4 = BytesN::from_array(&env, &[24u8; 32]);
+        let p5 = BytesN::from_array(&env, &[25u8; 32]);
+
+        // Default limit is 3 claims per window
+        client.payout(&user1, &p1);
+        assert_eq!(client.recipient_window_claims(&user1), 1);
+        client.payout(&user1, &p2);
+        assert_eq!(client.recipient_window_claims(&user1), 2);
+        client.payout(&user1, &p3);
+        assert_eq!(client.recipient_window_claims(&user1), 3);
+
+        // 4th claim for user1 fails
+        assert_eq!(
+            client.try_payout(&user1, &p4).unwrap_err(),
+            Ok(Error::ExceedsRecipientWindowLimit)
+        );
+
+        // User2 is unaffected by user1's limit!
+        client.payout(&user2, &p5);
+        assert_eq!(client.recipient_window_claims(&user2), 1);
+        assert_eq!(client.recipient_window_claims(&user1), 3);
+    }
+
+    #[test]
+    fn test_recipient_claim_limit_reset_on_rollover() {
+        let (env, _, client, _, _, user) = setup();
+        client.deposit(&5_000_i128);
+
+        let p1 = BytesN::from_array(&env, &[31u8; 32]);
+        let p2 = BytesN::from_array(&env, &[32u8; 32]);
+        let p3 = BytesN::from_array(&env, &[33u8; 32]);
+        let p4 = BytesN::from_array(&env, &[34u8; 32]);
+
+        client.payout(&user, &p1);
+        client.payout(&user, &p2);
+        client.payout(&user, &p3);
+        assert_eq!(client.recipient_window_claims(&user), 3);
+
+        // 4th claim fails in same window
+        assert_eq!(
+            client.try_payout(&user, &p4).unwrap_err(),
+            Ok(Error::ExceedsRecipientWindowLimit)
+        );
+
+        // Rollover to next window (+86_400 seconds)
+        let ts = env.ledger().timestamp();
+        env.ledger().set_timestamp(ts + 86_400);
+
+        // Claims counter in new window is 0
+        assert_eq!(client.recipient_window_claims(&user), 0);
+
+        // Payout succeeds in new window
+        client.payout(&user, &p4);
+        assert_eq!(client.recipient_window_claims(&user), 1);
     }
 }
