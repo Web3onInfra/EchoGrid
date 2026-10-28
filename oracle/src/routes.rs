@@ -328,7 +328,7 @@ pub async fn submit_proof(
 }
 
 /// Simple liveness probe.
-pub async fn health() -> impl IntoResponse {
+pub async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status":  "ok",
         "service": "echogrid-oracle",
@@ -769,5 +769,90 @@ mod tests {
             res.explorer_url,
             Some("https://stellar.expert/explorer/testnet/tx/tx_abc_123".into())
         );
+    }
+    #[tokio::test]
+    async fn test_openapi_spec_conformance() {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let openapi_path = std::path::Path::new(manifest_dir)
+            .parent()
+            .unwrap()
+            .join("docs")
+            .join("api")
+            .join("openapi.yaml");
+
+        let content =
+            std::fs::read_to_string(&openapi_path).expect("openapi.yaml must exist in docs/api/");
+
+        // Verify required endpoints exist in paths
+        let expected_endpoints = [
+            "/api/v1/health",
+            "/api/v1/ready",
+            "/api/v1/version",
+            "/api/v1/config",
+            "/api/v1/challenge",
+            "/api/v1/proof",
+            "/api/v1/claims/{id}",
+        ];
+        for ep in &expected_endpoints {
+            assert!(
+                content.contains(ep),
+                "openapi.yaml missing path definition for '{ep}'"
+            );
+        }
+
+        // Verify key error codes documented with examples
+        let expected_errors = [
+            "INVALID_WALLET_ADDRESS",
+            "CHALLENGE_RATE_LIMIT_EXCEEDED",
+            "INVALID_PROOF_HASH",
+            "CHALLENGE_EXPIRED",
+            "REPLAY_PROOF",
+            "COOLDOWN_ACTIVE",
+            "RATE_LIMIT_EXCEEDED",
+            "CLAIM_NOT_FOUND",
+        ];
+        for err in &expected_errors {
+            assert!(
+                content.contains(err),
+                "openapi.yaml missing error code example for '{err}'"
+            );
+        }
+
+        // Verify actual handler response JSON schema conformance
+        let now = Utc::now();
+        let state = setup_state(now).await;
+
+        // 1. Health
+        let Json(health_val) = health().await;
+        assert!(health_val.get("status").is_some());
+        assert!(health_val.get("service").is_some());
+        assert!(health_val.get("version").is_some());
+
+        // 2. Version
+        let Json(ver_resp) = version(State(state.clone())).await;
+        let ver_val = serde_json::to_value(ver_resp).unwrap();
+        assert!(ver_val.get("service").is_some());
+        assert!(ver_val.get("version").is_some());
+        assert!(ver_val.get("mode").is_some());
+
+        // 3. Public Config
+        let Json(cfg_resp) = public_config(State(state.clone())).await;
+        let cfg_val = serde_json::to_value(cfg_resp).unwrap();
+        for field in [
+            "mode",
+            "network",
+            "bounty_stroops",
+            "oracle_daily_cap_stroops",
+            "wallet_daily_claim_limit",
+            "cooldown_seconds",
+            "challenge_ttl_seconds",
+            "simulator_mode",
+            "explorer_base_url",
+        ] {
+            assert!(
+                cfg_val.get(field).is_some(),
+                "PublicConfigResponse missing required field '{field}'"
+            );
+        }
     }
 }
