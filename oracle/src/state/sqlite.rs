@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
+use crate::state::limits::{LimitConfig, LimitError};
 use crate::state::store::StateStore;
 use crate::state::types::{Challenge, Claim, PayoutStatus, StoreError};
 
@@ -281,6 +282,122 @@ impl StateStore for SqliteStore {
             total += amt_str.parse::<i128>().unwrap_or(0);
         }
         Ok(total)
+    }
+
+    async fn reserve_claim(
+        &self,
+        mut claim: Claim,
+        limits: &LimitConfig,
+        now: DateTime<Utc>,
+    ) -> Result<(), LimitError> {
+        let conn = self.conn.lock().unwrap();
+
+        // 1. Check cooldown
+        let mut cooldown_stmt = conn
+            .prepare("SELECT MAX(created_at) FROM claims WHERE wallet_address = ?1 AND status IN ('reserved', 'submitted', 'confirmed')")
+            .map_err(|e| LimitError::Store(e.to_string()))?;
+
+        let last_time_str: Option<String> = cooldown_stmt
+            .query_row(params![claim.wallet_address], |r| r.get(0))
+            .optional()
+            .map_err(|e| LimitError::Store(e.to_string()))?
+            .flatten();
+
+        if let Some(s) = last_time_str {
+            if let Ok(last_time) = DateTime::parse_from_rfc3339(&s) {
+                let elapsed = (now - last_time.with_timezone(&Utc)).num_seconds();
+                if elapsed < limits.wallet_cooldown_seconds {
+                    return Err(LimitError::CooldownActive {
+                        remaining_seconds: limits.wallet_cooldown_seconds - elapsed,
+                    });
+                }
+            }
+        }
+
+        // 2. Check wallet daily limit
+        let window_start = (now - limits.rolling_window_duration()).to_rfc3339();
+        let mut count_stmt = conn
+            .prepare("SELECT COUNT(*) FROM claims WHERE wallet_address = ?1 AND created_at >= ?2 AND status IN ('reserved', 'submitted', 'confirmed')")
+            .map_err(|e| LimitError::Store(e.to_string()))?;
+
+        let daily_claims: i64 = count_stmt
+            .query_row(params![claim.wallet_address, window_start], |r| r.get(0))
+            .map_err(|e| LimitError::Store(e.to_string()))?;
+
+        if (daily_claims as u32) >= limits.wallet_daily_claims_limit {
+            return Err(LimitError::WalletDailyLimitExceeded {
+                limit: limits.wallet_daily_claims_limit,
+            });
+        }
+
+        // 3. Check global daily cap
+        if !claim.simulated {
+            let mut spent_stmt = conn
+                .prepare("SELECT amount_stroops FROM claims WHERE simulated = 0 AND created_at >= ?1 AND status IN ('reserved', 'submitted', 'confirmed')")
+                .map_err(|e| LimitError::Store(e.to_string()))?;
+
+            let rows = spent_stmt
+                .query_map(params![window_start], |r| r.get::<_, String>(0))
+                .map_err(|e| LimitError::Store(e.to_string()))?;
+
+            let mut daily_spent: i128 = 0;
+            for r in rows {
+                let amt_str = r.map_err(|e| LimitError::Store(e.to_string()))?;
+                daily_spent += amt_str.parse::<i128>().unwrap_or(0);
+            }
+
+            if daily_spent + claim.amount_stroops > limits.global_daily_payout_cap_stroops {
+                return Err(LimitError::GlobalDailyCapExceeded {
+                    spent_stroops: daily_spent,
+                    cap_stroops: limits.global_daily_payout_cap_stroops,
+                });
+            }
+        }
+
+        claim.status = PayoutStatus::Reserved;
+        claim.created_at = now;
+        claim.updated_at = now;
+
+        conn.execute(
+            "INSERT INTO claims (id, wallet_address, challenge_id, proof_hash, amount_stroops, status, tx_hash, error, simulated, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                claim.id,
+                claim.wallet_address,
+                claim.challenge_id,
+                claim.proof_hash,
+                claim.amount_stroops.to_string(),
+                "reserved",
+                claim.tx_hash,
+                claim.error,
+                if claim.simulated { 1 } else { 0 },
+                claim.created_at.to_rfc3339(),
+                claim.updated_at.to_rfc3339()
+            ],
+        )
+        .map_err(|e| LimitError::Store(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn release_claim(
+        &self,
+        id: &str,
+        reason: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let rows = conn
+            .execute(
+                "UPDATE claims SET status = 'failed', error = ?1, updated_at = ?2 WHERE id = ?3",
+                params![reason, now.to_rfc3339(), id],
+            )
+            .map_err(|e| StoreError::Backend(e.to_string()))?;
+
+        if rows == 0 {
+            return Err(StoreError::NotFound(id.to_string()));
+        }
+        Ok(())
     }
 }
 
