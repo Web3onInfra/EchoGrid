@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "oracle",
     "acoustic_cli",
+    "spikes/soroban_rpc",
 ]
 
 exclude = [
