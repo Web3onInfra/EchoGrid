@@ -20,6 +20,31 @@ pub struct SqliteStore {
     conn: Arc<Mutex<Connection>>,
 }
 
+fn map_claim_row(row: &rusqlite::Row) -> rusqlite::Result<Claim> {
+    let amount_str: String = row.get(4)?;
+    let status_str: String = row.get(5)?;
+    let simulated_int: i32 = row.get(8)?;
+    let created_str: String = row.get(9)?;
+    let updated_str: String = row.get(10)?;
+    Ok(Claim {
+        id: row.get(0)?,
+        wallet_address: row.get(1)?,
+        challenge_id: row.get(2)?,
+        proof_hash: row.get(3)?,
+        amount_stroops: amount_str.parse().unwrap_or(0),
+        status: serde_json::from_str(&format!("\"{status_str}\"")).unwrap(),
+        tx_hash: row.get(6)?,
+        error: row.get(7)?,
+        simulated: simulated_int != 0,
+        created_at: DateTime::parse_from_rfc3339(&created_str)
+            .unwrap()
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_str)
+            .unwrap()
+            .with_timezone(&Utc),
+    })
+}
+
 impl SqliteStore {
     /// Opens or creates an SQLite store at `path`, enabling WAL mode and running migrations.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StoreError> {
@@ -175,32 +200,37 @@ impl StateStore for SqliteStore {
             .prepare("SELECT id, wallet_address, challenge_id, proof_hash, amount_stroops, status, tx_hash, error, simulated, created_at, updated_at FROM claims WHERE id = ?1")
             .map_err(|e| StoreError::Backend(e.to_string()))?;
 
-        stmt.query_row(params![id], |row| {
-            let amount_str: String = row.get(4)?;
-            let status_str: String = row.get(5)?;
-            let simulated_int: i32 = row.get(8)?;
-            let created_str: String = row.get(9)?;
-            let updated_str: String = row.get(10)?;
-            Ok(Claim {
-                id: row.get(0)?,
-                wallet_address: row.get(1)?,
-                challenge_id: row.get(2)?,
-                proof_hash: row.get(3)?,
-                amount_stroops: amount_str.parse().unwrap_or(0),
-                status: serde_json::from_str(&format!("\"{status_str}\"")).unwrap(),
-                tx_hash: row.get(6)?,
-                error: row.get(7)?,
-                simulated: simulated_int != 0,
-                created_at: DateTime::parse_from_rfc3339(&created_str)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                updated_at: DateTime::parse_from_rfc3339(&updated_str)
-                    .unwrap()
-                    .with_timezone(&Utc),
-            })
-        })
-        .optional()
-        .map_err(|e| StoreError::Backend(e.to_string()))
+        stmt.query_row(params![id], map_claim_row)
+            .optional()
+            .map_err(|e| StoreError::Backend(e.to_string()))
+    }
+
+    async fn get_claim_by_proof_hash(&self, proof_hash: &str) -> Result<Option<Claim>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, wallet_address, challenge_id, proof_hash, amount_stroops, status, tx_hash, error, simulated, created_at, updated_at FROM claims WHERE proof_hash = ?1")
+            .map_err(|e| StoreError::Backend(e.to_string()))?;
+
+        stmt.query_row(params![proof_hash], map_claim_row)
+            .optional()
+            .map_err(|e| StoreError::Backend(e.to_string()))
+    }
+
+    async fn get_in_flight_claims(&self) -> Result<Vec<Claim>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, wallet_address, challenge_id, proof_hash, amount_stroops, status, tx_hash, error, simulated, created_at, updated_at FROM claims WHERE status IN ('reserved', 'submitted')")
+            .map_err(|e| StoreError::Backend(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], map_claim_row)
+            .map_err(|e| StoreError::Backend(e.to_string()))?;
+
+        let mut claims = Vec::new();
+        for r in rows {
+            claims.push(r.map_err(|e| StoreError::Backend(e.to_string()))?);
+        }
+        Ok(claims)
     }
 
     async fn update_claim_status(

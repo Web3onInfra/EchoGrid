@@ -65,6 +65,23 @@ impl StateStore for MemoryStore {
         Ok(d.claims.get(id).cloned())
     }
 
+    async fn get_claim_by_proof_hash(&self, proof_hash: &str) -> Result<Option<Claim>, StoreError> {
+        let d = self.data.read().unwrap();
+        Ok(d.claims
+            .values()
+            .find(|c| c.proof_hash == proof_hash)
+            .cloned())
+    }
+
+    async fn get_in_flight_claims(&self) -> Result<Vec<Claim>, StoreError> {
+        let d = self.data.read().unwrap();
+        Ok(d.claims
+            .values()
+            .filter(|c| matches!(c.status, PayoutStatus::Reserved | PayoutStatus::Submitted))
+            .cloned()
+            .collect())
+    }
+
     async fn update_claim_status(
         &self,
         id: &str,
