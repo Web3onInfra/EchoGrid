@@ -103,12 +103,24 @@ pub enum DataKey {
 // ── Events ───────────────────────────────────────────────────────────────────
 // ---------------------------------------------------------------------------
 
+/// Emitted when the escrow contract is initialized.
+const EVENT_INITIALIZED: &str = "negawatt_initialized";
 /// Emitted when the municipality deposits USDC into escrow.
 const EVENT_DEPOSITED: &str = "negawatt_deposited";
 /// Emitted for every successful NegaWatt payout to a user.
 const EVENT_PAYOUT: &str = "negawatt_payout";
 /// Emitted when the bounty rate is updated.
 const EVENT_BOUNTY_SET: &str = "negawatt_bounty_set";
+/// Emitted when configuration parameters are updated.
+const EVENT_CONFIG_UPDATED: &str = "negawatt_config_updated";
+/// Emitted when emergency pause is activated.
+const EVENT_PAUSED: &str = "negawatt_paused";
+/// Emitted when emergency pause is lifted.
+const EVENT_UNPAUSED: &str = "negawatt_unpaused";
+/// Emitted when the oracle key is rotated.
+const EVENT_ORACLE_ROTATED: &str = "negawatt_oracle_rotated";
+/// Emitted when funds are withdrawn by the municipality.
+const EVENT_WITHDRAWN: &str = "negawatt_withdrawn";
 
 // ---------------------------------------------------------------------------
 // ── Contract Entry Point ────────────────────────────────────────────────────
@@ -188,6 +200,11 @@ impl NegaWattEscrow {
         env.storage().instance().set(&DataKey::Config, &config);
         env.storage().instance().set(&DataKey::Paused, &false);
 
+        env.events().publish(
+            (Symbol::new(&env, EVENT_INITIALIZED), municipality.clone()),
+            (oracle.clone(), token.clone(), bounty),
+        );
+
         Ok(())
     }
 
@@ -236,7 +253,7 @@ impl NegaWattEscrow {
     ///
     /// Municipality-only. Bounded by pool balance. Allowed while paused.
     pub fn withdraw(env: Env, to: Address, amount: i128) -> Result<(), Error> {
-        let _municipality = Self::require_municipality_role(&env)?;
+        let municipality = Self::require_municipality_role(&env)?;
 
         if amount <= 0 {
             return Err(Error::InvalidAmount);
@@ -254,6 +271,11 @@ impl NegaWattEscrow {
         }
 
         TokenClient::new(&env, &token_id).transfer(&env.current_contract_address(), &to, &amount);
+
+        env.events().publish(
+            (Symbol::new(&env, EVENT_WITHDRAWN), municipality, to),
+            amount,
+        );
 
         Ok(())
     }
@@ -288,8 +310,12 @@ impl NegaWattEscrow {
             .set(&DataKey::BountyPerClaim, &new_bounty);
 
         env.events().publish(
-            (Symbol::new(&env, EVENT_BOUNTY_SET), municipality),
+            (Symbol::new(&env, EVENT_BOUNTY_SET), municipality.clone()),
             new_bounty,
+        );
+        env.events().publish(
+            (Symbol::new(&env, EVENT_CONFIG_UPDATED), municipality),
+            config,
         );
 
         Ok(())
@@ -299,7 +325,7 @@ impl NegaWattEscrow {
     ///
     /// Municipality-only. Enforces invariant: bounty <= new_cap <= window_budget.
     pub fn set_payout_cap(env: Env, new_cap: i128) -> Result<(), Error> {
-        let _municipality = Self::require_municipality_role(&env)?;
+        let municipality = Self::require_municipality_role(&env)?;
 
         if new_cap <= 0 {
             return Err(Error::InvalidCap);
@@ -319,6 +345,11 @@ impl NegaWattEscrow {
         config.per_payout_cap = new_cap;
         env.storage().instance().set(&DataKey::Config, &config);
 
+        env.events().publish(
+            (Symbol::new(&env, EVENT_CONFIG_UPDATED), municipality),
+            config,
+        );
+
         Ok(())
     }
 
@@ -326,7 +357,7 @@ impl NegaWattEscrow {
     ///
     /// Municipality-only. Enforces invariant: per_payout_cap <= new_budget.
     pub fn set_window_budget(env: Env, new_budget: i128) -> Result<(), Error> {
-        let _municipality = Self::require_municipality_role(&env)?;
+        let municipality = Self::require_municipality_role(&env)?;
 
         if new_budget <= 0 {
             return Err(Error::InvalidBudget);
@@ -346,6 +377,11 @@ impl NegaWattEscrow {
         config.window_budget = new_budget;
         env.storage().instance().set(&DataKey::Config, &config);
 
+        env.events().publish(
+            (Symbol::new(&env, EVENT_CONFIG_UPDATED), municipality),
+            config,
+        );
+
         Ok(())
     }
 
@@ -353,7 +389,7 @@ impl NegaWattEscrow {
     ///
     /// Municipality-only.
     pub fn set_recipient_claim_limit(env: Env, new_limit: u32) -> Result<(), Error> {
-        let _municipality = Self::require_municipality_role(&env)?;
+        let municipality = Self::require_municipality_role(&env)?;
 
         if new_limit == 0 {
             return Err(Error::InvalidAmount);
@@ -368,6 +404,11 @@ impl NegaWattEscrow {
         config.max_recipient_window_claims = new_limit;
         env.storage().instance().set(&DataKey::Config, &config);
 
+        env.events().publish(
+            (Symbol::new(&env, EVENT_CONFIG_UPDATED), municipality),
+            config,
+        );
+
         Ok(())
     }
 
@@ -375,11 +416,15 @@ impl NegaWattEscrow {
     ///
     /// Municipality-only.
     pub fn pause(env: Env) -> Result<(), Error> {
-        let _municipality = Self::require_municipality_role(&env)?;
+        let municipality = Self::require_municipality_role(&env)?;
         if !env.storage().instance().has(&DataKey::Config) {
             return Err(Error::NotInitialized);
         }
         env.storage().instance().set(&DataKey::Paused, &true);
+
+        env.events()
+            .publish((Symbol::new(&env, EVENT_PAUSED), municipality), ());
+
         Ok(())
     }
 
@@ -387,11 +432,15 @@ impl NegaWattEscrow {
     ///
     /// Municipality-only.
     pub fn unpause(env: Env) -> Result<(), Error> {
-        let _municipality = Self::require_municipality_role(&env)?;
+        let municipality = Self::require_municipality_role(&env)?;
         if !env.storage().instance().has(&DataKey::Config) {
             return Err(Error::NotInitialized);
         }
         env.storage().instance().set(&DataKey::Paused, &false);
+
+        env.events()
+            .publish((Symbol::new(&env, EVENT_UNPAUSED), municipality), ());
+
         Ok(())
     }
 
@@ -400,7 +449,7 @@ impl NegaWattEscrow {
     /// Municipality-only. The old oracle key immediately loses authorization
     /// to trigger payouts.
     pub fn set_oracle(env: Env, new_oracle: Address) -> Result<(), Error> {
-        let _municipality = Self::require_municipality_role(&env)?;
+        let municipality = Self::require_municipality_role(&env)?;
 
         let mut config: Config = env
             .storage()
@@ -408,11 +457,17 @@ impl NegaWattEscrow {
             .get(&DataKey::Config)
             .ok_or(Error::NotInitialized)?;
 
+        let old_oracle = config.oracle.clone();
         config.oracle = new_oracle.clone();
         env.storage().instance().set(&DataKey::Config, &config);
         env.storage()
             .instance()
             .set(&DataKey::OracleAddress, &new_oracle);
+
+        env.events().publish(
+            (Symbol::new(&env, EVENT_ORACLE_ROTATED), municipality),
+            (old_oracle, new_oracle),
+        );
 
         Ok(())
     }
@@ -545,7 +600,7 @@ impl NegaWattEscrow {
         // Emit payout event — indexers will use this to build the user dashboard.
         env.events().publish(
             (Symbol::new(&env, EVENT_PAYOUT), oracle, recipient.clone()),
-            bounty,
+            (bounty, proof_hash.clone()),
         );
 
         Ok(())
@@ -670,7 +725,7 @@ impl NegaWattEscrow {
 mod test {
     use super::*;
     use soroban_sdk::{
-        testutils::{Address as _, Ledger as _},
+        testutils::{Address as _, Events as _, Ledger as _},
         token::StellarAssetClient,
         Address, BytesN, Env,
     };
@@ -1397,5 +1452,119 @@ mod test {
 
         let token = TokenClient::new(&env, &token_id);
         assert_eq!(token.balance(&recipient), 1_500_i128);
+    }
+
+    #[test]
+    fn test_events_emitted_for_all_operations() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let municipality = Address::generate(&env);
+        let oracle = Address::generate(&env);
+        let user = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin)
+            .address();
+        StellarAssetClient::new(&env, &token_id).mint(&municipality, &10_000_i128);
+
+        let contract_id = env.register_contract(None, NegaWattEscrow);
+        let client = NegaWattEscrowClient::new(&env, &contract_id);
+
+        use soroban_sdk::TryFromVal;
+
+        // 1. Initialize event
+        client.initialize(&municipality, &oracle, &token_id, &100_i128);
+        let init_event = env.events().all().last().unwrap();
+        assert_eq!(init_event.0, contract_id);
+        let sym = Symbol::try_from_val(&env, &init_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_INITIALIZED));
+        let init_data: (Address, Address, i128) =
+            <(Address, Address, i128)>::try_from_val(&env, &init_event.2).unwrap();
+        assert_eq!(init_data, (oracle.clone(), token_id.clone(), 100_i128));
+
+        // 2. Deposit event
+        client.deposit(&5_000_i128);
+        let dep_event = env.events().all().last().unwrap();
+        assert_eq!(dep_event.0, contract_id);
+        let sym = Symbol::try_from_val(&env, &dep_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_DEPOSITED));
+        let dep_amount = i128::try_from_val(&env, &dep_event.2).unwrap();
+        assert_eq!(dep_amount, 5_000_i128);
+
+        // 3. Set bounty & config updated event
+        client.set_bounty(&150_i128);
+        let cfg_event = env.events().all().last().unwrap();
+        assert_eq!(cfg_event.0, contract_id);
+        let sym = Symbol::try_from_val(&env, &cfg_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_CONFIG_UPDATED));
+        let cfg_data = Config::try_from_val(&env, &cfg_event.2).unwrap();
+        assert_eq!(cfg_data.bounty, 150_i128);
+
+        // 4. Set payout cap event
+        client.set_payout_cap(&500_i128);
+        let cap_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &cap_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_CONFIG_UPDATED));
+        let cap_data = Config::try_from_val(&env, &cap_event.2).unwrap();
+        assert_eq!(cap_data.per_payout_cap, 500_i128);
+
+        // 5. Set window budget event
+        client.set_window_budget(&1_000_i128);
+        let bud_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &bud_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_CONFIG_UPDATED));
+        let bud_data = Config::try_from_val(&env, &bud_event.2).unwrap();
+        assert_eq!(bud_data.window_budget, 1_000_i128);
+
+        // 6. Set recipient claim limit event
+        client.set_recipient_claim_limit(&5_u32);
+        let rcl_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &rcl_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_CONFIG_UPDATED));
+        let rcl_data = Config::try_from_val(&env, &rcl_event.2).unwrap();
+        assert_eq!(rcl_data.max_recipient_window_claims, 5);
+
+        // 7. Pause event
+        client.pause();
+        let pause_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &pause_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_PAUSED));
+
+        // 8. Unpause event
+        client.unpause();
+        let unpause_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &unpause_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_UNPAUSED));
+
+        // 9. Oracle rotation event
+        let new_oracle = Address::generate(&env);
+        client.set_oracle(&new_oracle);
+        let rot_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &rot_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_ORACLE_ROTATED));
+        let rot_data = <(Address, Address)>::try_from_val(&env, &rot_event.2).unwrap();
+        assert_eq!(rot_data, (oracle.clone(), new_oracle.clone()));
+
+        // 10. Payout event (with recipient, amount, proof hash)
+        let proof = BytesN::from_array(&env, &[77u8; 32]);
+        client.payout(&user, &proof);
+        let payout_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &payout_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_PAYOUT));
+        let (payout_amount, payout_proof): (i128, BytesN<32>) =
+            <(i128, BytesN<32>)>::try_from_val(&env, &payout_event.2).unwrap();
+        assert_eq!(payout_amount, 150_i128);
+        assert_eq!(payout_proof, proof);
+
+        // 11. Withdraw event
+        let dest = Address::generate(&env);
+        client.withdraw(&dest, &1_000_i128);
+        let withdraw_event = env.events().all().last().unwrap();
+        let sym = Symbol::try_from_val(&env, &withdraw_event.1.get(0).unwrap()).unwrap();
+        assert_eq!(sym, Symbol::new(&env, EVENT_WITHDRAWN));
+        let withdraw_amount = i128::try_from_val(&env, &withdraw_event.2).unwrap();
+        assert_eq!(withdraw_amount, 1_000_i128);
     }
 }
