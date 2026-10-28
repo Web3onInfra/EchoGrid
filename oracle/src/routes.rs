@@ -5,7 +5,7 @@
 //!   GET  /api/v1/health — service liveness probe.
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -336,6 +336,125 @@ pub async fn health() -> impl IntoResponse {
     }))
 }
 
+/// Service readiness probe providing deep startup self-check status.
+pub async fn ready(State(state): State<AppState>) -> Response {
+    let report_lock = state.readiness_report.read().await;
+    let report = match report_lock.as_ref() {
+        Some(rep) => rep.clone(),
+        None => crate::chain::self_check::SelfCheckReport {
+            rpc_healthy: true,
+            oracle_authorized: true,
+            contract_paused: false,
+            oracle_funded: true,
+            contract_id: state.config.contract_id.clone().unwrap_or_default(),
+            oracle_address: "MOCK_ORACLE".to_string(),
+        },
+    };
+
+    let status = if report.is_ready() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    (status, Json(report)).into_response()
+}
+
+/// Service version metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VersionResponse {
+    pub service: &'static str,
+    pub version: &'static str,
+    pub mode: String,
+}
+
+pub async fn version(State(state): State<AppState>) -> Json<VersionResponse> {
+    Json(VersionResponse {
+        service: "echogrid-oracle",
+        version: env!("CARGO_PKG_VERSION"),
+        mode: state.config.mode.to_string(),
+    })
+}
+
+/// Public non-secret configuration parameters for frontend edge clients.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PublicConfigResponse {
+    pub mode: String,
+    pub network: String,
+    pub contract_id: Option<String>,
+    pub token_id: Option<String>,
+    pub bounty_stroops: i128,
+    pub oracle_daily_cap_stroops: i128,
+    pub wallet_daily_claim_limit: u32,
+    pub cooldown_seconds: u64,
+    pub challenge_ttl_seconds: u64,
+    pub simulator_mode: bool,
+    pub explorer_base_url: String,
+}
+
+pub async fn public_config(State(state): State<AppState>) -> Json<PublicConfigResponse> {
+    Json(PublicConfigResponse {
+        mode: state.config.mode.to_string(),
+        network: "testnet".to_string(),
+        contract_id: state.config.contract_id.clone(),
+        token_id: state.config.token_id.clone(),
+        bounty_stroops: state.config.bounty_stroops,
+        oracle_daily_cap_stroops: state.config.oracle_daily_cap_stroops,
+        wallet_daily_claim_limit: state.config.wallet_daily_claim_limit,
+        cooldown_seconds: state.config.cooldown_seconds,
+        challenge_ttl_seconds: state.config.challenge_ttl_seconds,
+        simulator_mode: state.config.simulator_mode,
+        explorer_base_url: "https://stellar.expert/explorer/testnet/tx".to_string(),
+    })
+}
+
+/// Pollable claim status response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClaimPollResponse {
+    pub claim_id: String,
+    pub wallet_address: String,
+    pub status: String,
+    pub amount_stroops: i128,
+    pub tx_hash: Option<String>,
+    pub explorer_url: Option<String>,
+    pub error: Option<String>,
+    pub simulated: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub async fn get_claim(
+    State(state): State<AppState>,
+    Path(claim_id): Path<String>,
+) -> Result<Json<ClaimPollResponse>, ApiError> {
+    let claim = state
+        .store
+        .get_claim(&claim_id)
+        .await
+        .map_err(|e| ApiError::internal("STORE_ERROR", e.to_string()))?
+        .ok_or_else(|| {
+            ApiError::not_found("CLAIM_NOT_FOUND", format!("Claim '{claim_id}' not found"))
+        })?;
+
+    let explorer_url = claim
+        .tx_hash
+        .as_ref()
+        .map(|tx| format!("https://stellar.expert/explorer/testnet/tx/{tx}"));
+
+    Ok(Json(ClaimPollResponse {
+        claim_id: claim.id,
+        wallet_address: claim.wallet_address,
+        status: claim.status.to_string(),
+        amount_stroops: claim.amount_stroops,
+        tx_hash: claim.tx_hash,
+        explorer_url,
+        error: claim.error,
+        simulated: claim.simulated,
+        created_at: claim.created_at.to_rfc3339(),
+        updated_at: claim.updated_at.to_rfc3339(),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,5 +690,84 @@ mod tests {
         // Verify zero requests ever reached Soroban RPC pipeline
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_operational_ready_and_version_and_config() {
+        let now = Utc::now();
+        let state = setup_state(now).await;
+
+        // 1. Ready
+        let resp = ready(State(state.clone())).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Degraded report -> 503
+        {
+            let mut rep = state.readiness_report.write().await;
+            *rep = Some(crate::chain::self_check::SelfCheckReport {
+                rpc_healthy: true,
+                oracle_authorized: true,
+                contract_paused: true, // paused!
+                oracle_funded: true,
+                contract_id: "CDFOK4...".into(),
+                oracle_address: "GA4Z...".into(),
+            });
+        }
+        let resp_degraded = ready(State(state.clone())).await;
+        assert_eq!(resp_degraded.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        // 2. Version
+        let ver = version(State(state.clone())).await;
+        assert_eq!(ver.service, "echogrid-oracle");
+        assert_eq!(ver.mode, "mock");
+
+        // 3. Config
+        let cfg = public_config(State(state.clone())).await;
+        assert_eq!(cfg.network, "testnet");
+        assert_eq!(cfg.bounty_stroops, 10_000_000);
+        assert_eq!(
+            cfg.explorer_base_url,
+            "https://stellar.expert/explorer/testnet/tx"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_operational_get_claim_polling() {
+        let now = Utc::now();
+        let state = setup_state(now).await;
+
+        // Poll non-existent claim -> 404 Not Found
+        let err = get_claim(State(state.clone()), Path("claim_unknown".into()))
+            .await
+            .unwrap_err();
+        assert_eq!(err.error_code(), "CLAIM_NOT_FOUND");
+
+        // Save a claim in store
+        let claim = Claim {
+            id: "claim_123".into(),
+            wallet_address: WALLET.into(),
+            challenge_id: CH_ID.into(),
+            proof_hash: "hash123".into(),
+            amount_stroops: 10_000_000,
+            status: PayoutStatus::Confirmed,
+            tx_hash: Some("tx_abc_123".into()),
+            error: None,
+            simulated: false,
+            created_at: now,
+            updated_at: now,
+        };
+        state.store.save_claim(claim).await.unwrap();
+
+        // Poll saved claim -> OK
+        let res = get_claim(State(state.clone()), Path("claim_123".into()))
+            .await
+            .unwrap();
+        assert_eq!(res.claim_id, "claim_123");
+        assert_eq!(res.status, "confirmed");
+        assert_eq!(res.tx_hash, Some("tx_abc_123".into()));
+        assert_eq!(
+            res.explorer_url,
+            Some("https://stellar.expert/explorer/testnet/tx/tx_abc_123".into())
+        );
     }
 }

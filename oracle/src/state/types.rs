@@ -48,6 +48,18 @@ impl PayoutStatus {
     }
 }
 
+impl std::fmt::Display for PayoutStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Reserved => write!(f, "reserved"),
+            Self::Submitted => write!(f, "submitted"),
+            Self::Confirmed => write!(f, "confirmed"),
+            Self::Failed => write!(f, "failed"),
+            Self::Expired => write!(f, "expired"),
+        }
+    }
+}
+
 /// Complete payout claim record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Claim {
