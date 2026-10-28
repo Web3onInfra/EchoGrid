@@ -38,9 +38,25 @@ Soroban provides three storage tiers. Each is chosen based on lifecycle and rent
    - *Rationale*: Window limits are epoch-scoped. Once the window passes, claim counts are irrelevant. Temporary storage automatically expires, avoiding ledger bloat and rent costs.
 
 ## 4. TTL & Rent Management
-- **Instance TTL**: State mutations (`deposit`, `payout`, `set_config`, `pause`, `unpause`, `withdraw`, `set_oracle`) extend instance TTL by `535_680` ledgers (~31 days).
-- **Persistent Replay TTL**: Each `payout` extends the persistent `ClaimUsed` entry TTL to `6_000_000` ledgers (~1 year).
-- **Phase 2 Nonce Bridge**: Beyond 1 year, Phase 2's short-lived challenge nonces (valid for < 15 minutes) prevent replay of stale proofs even if a persistent entry were ever expired.
+- **Instance Storage TTL Parameters**:
+  - `INSTANCE_TTL_THRESHOLD = 120_960` ledgers (~7 days @ 5s/ledger).
+  - `INSTANCE_EXTEND_TO = 535_680` ledgers (~31 days @ 5s/ledger).
+  - Automatically invoked across all state-mutating functions (`initialize`, `deposit`, `withdraw`, `set_bounty`, `set_payout_cap`, `set_window_budget`, `set_recipient_claim_limit`, `pause`, `unpause`, `set_oracle`, and `payout`).
+- **Persistent Replay Storage TTL Parameters**:
+  - `PERSISTENT_CLAIM_THRESHOLD = 518_400` ledgers (~30 days).
+  - `PERSISTENT_CLAIM_EXTEND_TO = 6_000_000` ledgers (~347 days / ~1 year).
+  - Automatically extended on each successful `payout` call.
+- **Maximum Extension & Replay-Protection Horizon**:
+  - Stellar closes ledgers every ~5 seconds (≈ 17,280 ledgers/day).
+  - Maximum allowable persistent storage TTL extension permitted by Soroban network consensus is `6_000_000` ledgers.
+  - $\text{Horizon} = 6,000,000 \times 5\text{ s} = 30,000,000\text{ s} \approx 347.2\text{ days}$ (~1 calendar year).
+  - Within this horizon, any attempted replay of an identical `proof_hash` is unconditionally halted by on-chain persistent storage lookup.
+- **Phase 2 Challenge Nonce Bridge (Beyond the 1-Year Horizon)**:
+  - If a spent persistent entry expires after ~1 year without renewal, an adversary could hypothetically re-submit a vintage proof.
+  - Phase 2 eliminates this attack vector entirely via short-lived challenge nonces:
+    - Every Proof-of-Power-Down must bind an ephemeral server challenge nonce valid for $< 15$ minutes ($900$ seconds).
+    - The oracle verification pipeline strictly rejects proofs bearing challenge timestamps or nonces older than 15 minutes prior to submitting an on-chain transaction.
+    - Thus, no proof older than 15 minutes can ever obtain oracle authorization, rendering any proof beyond the 1-year horizon permanently unexecutable regardless of entry archival.
 
 ## 5. Contract Errors (`#[contracterror]`)
 Panics are replaced with a typed enum with stable numeric codes:
