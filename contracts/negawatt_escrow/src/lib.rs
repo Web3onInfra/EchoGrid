@@ -411,4 +411,83 @@ mod test {
         client.set_bounty(&250_i128);
         assert_eq!(client.bounty(), 250_i128);
     }
+
+    #[test]
+    #[should_panic(expected = "deposit amount must be positive")]
+    fn test_deposit_zero_or_negative_fails() {
+        let (_, _, client, _, _, _) = setup();
+        client.deposit(&0_i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "bounty must be positive")]
+    fn test_set_bounty_zero_or_negative_fails() {
+        let (_, _, client, _, _, _) = setup();
+        client.set_bounty(&0_i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient escrow balance")]
+    fn test_payout_insufficient_balance() {
+        let (env, _, client, _, _, user) = setup();
+        // Escrow has 0 balance, bounty is 100
+        let proof: BytesN<32> = BytesN::from_array(&env, &[9u8; 32]);
+        client.payout(&user, &proof);
+    }
+
+    #[test]
+    fn test_is_claimed_view() {
+        let (env, _, client, _, _, user) = setup();
+        client.deposit(&500_i128);
+        let proof: BytesN<32> = BytesN::from_array(&env, &[5u8; 32]);
+        assert!(!client.is_claimed(&proof));
+        client.payout(&user, &proof);
+        assert!(client.is_claimed(&proof));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_initialize_auth_failure_without_municipality_auth() {
+        let env = Env::default();
+        // NOTE: env.mock_all_auths() is intentionally omitted!
+        let municipality = Address::generate(&env);
+        let oracle = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin)
+            .address();
+        let contract_id = env.register_contract(None, NegaWattEscrow);
+        let client = NegaWattEscrowClient::new(&env, &contract_id);
+
+        // Calling without municipality authorization must fail
+        client.initialize(&municipality, &oracle, &token_id, &100_i128);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_deposit_auth_failure_without_municipality_auth() {
+        let (env, _, client, _, _, _) = setup();
+        // Clear mock_all_auths by providing an empty list of mock auths
+        env.mock_auths(&[]);
+        client.deposit(&100_i128);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_bounty_auth_failure_without_municipality_auth() {
+        let (env, _, client, _, _, _) = setup();
+        env.mock_auths(&[]);
+        client.set_bounty(&300_i128);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_payout_auth_failure_without_oracle_auth() {
+        let (env, _, client, _, _, user) = setup();
+        client.deposit(&500_i128);
+        let proof = BytesN::from_array(&env, &[8u8; 32]);
+        // Restrict auth so oracle signature is absent
+        env.mock_auths(&[]);
+        client.payout(&user, &proof);
+    }
 }
