@@ -143,3 +143,5 @@ fly secrets set ORACLE_SECRET_KEY="S..."
 # 3. Deploy via justfile
 just deploy-fly
 ```
+
+For complete key rotation, metrics, volume disaster recovery, and operational procedures, refer to the [Phase 2 Operator Runbook](docs/phase2/operator-runbook.md).
