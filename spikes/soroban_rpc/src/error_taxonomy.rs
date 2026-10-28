@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Error taxonomy mapping on-chain Soroban failures and RPC errors into
 /// HTTP-friendly status codes for the oracle service.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EscrowError {
     /// The proof hash was already claimed and recorded in contract persistent storage.
@@ -32,6 +33,7 @@ pub enum EscrowError {
     Unknown(String),
 }
 
+#[allow(dead_code)]
 impl EscrowError {
     /// Maps each failure mode to standard HTTP status codes.
     pub fn http_status(&self) -> u16 {
