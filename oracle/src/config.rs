@@ -62,6 +62,7 @@ pub struct AppConfig {
     pub rate_limit_per_min: u32,
     pub challenge_rate_per_min: u32,
     pub sync_wait_timeout_seconds: u64,
+    pub simulator_mode: bool,
 }
 
 impl fmt::Debug for AppConfig {
@@ -140,6 +141,9 @@ impl AppConfig {
         let rate_limit_per_min = parse_int_or(&get_var, "RATE_LIMIT_PER_MIN", 30)?;
         let challenge_rate_per_min = parse_int_or(&get_var, "CHALLENGE_RATE_PER_MIN", 6)?;
         let sync_wait_timeout_seconds = parse_int_or(&get_var, "SYNC_WAIT_TIMEOUT_SECONDS", 20)?;
+        let simulator_mode = get_var("SIMULATOR_MODE")
+            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+            .unwrap_or(false);
 
         let config = Self {
             mode,
@@ -160,6 +164,7 @@ impl AppConfig {
             rate_limit_per_min,
             challenge_rate_per_min,
             sync_wait_timeout_seconds,
+            simulator_mode,
         };
 
         config.validate()?;

@@ -23,6 +23,8 @@ pub struct ProofV1 {
     pub proof_hash: String,
     pub detector_version: String,
     pub duration_seconds: u32,
+    #[serde(default)]
+    pub simulated: bool,
 }
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
@@ -164,6 +166,7 @@ mod tests {
             proof_hash: GOLDEN_HASH.to_string(),
             detector_version: "echonet-1.2".to_string(),
             duration_seconds: 15,
+            simulated: false,
         }
     }
 
