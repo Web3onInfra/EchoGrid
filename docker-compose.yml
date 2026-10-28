@@ -1,0 +1,39 @@
+services:
+  oracle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: echogrid-oracle:local
+    container_name: echogrid-oracle
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - ORACLE_MODE=mock
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DATABASE_URL=/data/echogrid.db
+      - RUST_LOG=info
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://127.0.0.1:8080
+      - CHALLENGE_TTL_SECONDS=120
+      - COOLDOWN_SECONDS=600
+      - WALLET_DAILY_CLAIM_LIMIT=2
+      - ORACLE_DAILY_CAP_STROOPS=100000000
+      - BOUNTY_STROOPS=10000000
+      - RATE_LIMIT_PER_MIN=30
+      - CHALLENGE_RATE_PER_MIN=6
+      - SYNC_WAIT_TIMEOUT_SECONDS=20
+      - REQUEST_TIMEOUT_SECONDS=30
+      - TRUST_PROXY=false
+    volumes:
+      - oracle-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  oracle-data:
+    driver: local
