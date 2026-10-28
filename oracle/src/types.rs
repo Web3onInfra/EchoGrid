@@ -42,7 +42,7 @@ pub struct ProofPayload {
 // ---------------------------------------------------------------------------
 
 /// Standard envelope for every oracle API response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OracleResponse {
     pub success: bool,
     pub message: String,
@@ -79,4 +79,146 @@ pub struct VerificationResult {
     pub valid: bool,
     /// Human-readable reason for rejection (empty on success).
     pub reason: String,
+}
+
+// ---------------------------------------------------------------------------
+// ── Escrow & Soroban Error Taxonomy ─────────────────────────────────────────
+// ---------------------------------------------------------------------------
+
+/// Error taxonomy mapping on-chain Soroban failures and RPC errors into
+/// HTTP-friendly status codes for the oracle service.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EscrowError {
+    /// The proof hash was already claimed and recorded in contract persistent storage.
+    ReplayDetected,
+
+    /// The transaction caller or signer lacks the authorized oracle role.
+    UnauthorizedSigner,
+
+    /// Escrow contract balance is lower than the required bounty amount.
+    InsufficientPoolBalance,
+
+    /// The contract was not properly initialized or missing token configuration.
+    ContractNotInitialized,
+
+    /// Proof hash argument is malformed (not 32-byte hex).
+    InvalidProofFormat,
+
+    /// Soroban RPC node timed out waiting for ledger inclusion.
+    RpcTimeout,
+
+    /// Soroban RPC endpoint is unreachable or returned HTTP network failure.
+    RpcUnavailable,
+
+    /// Transaction simulation failed before submission.
+    SimulationFailed(String),
+
+    /// Unclassified or internal error.
+    Unknown(String),
+}
+
+#[allow(dead_code)]
+impl EscrowError {
+    /// Maps each failure mode to standard HTTP status codes.
+    pub fn http_status(&self) -> u16 {
+        match self {
+            Self::ReplayDetected => 409,          // 409 Conflict
+            Self::UnauthorizedSigner => 403,      // 403 Forbidden
+            Self::InsufficientPoolBalance => 503, // 503 Service Unavailable
+            Self::InvalidProofFormat => 400,      // 400 Bad Request
+            Self::RpcTimeout => 504,              // 504 Gateway Timeout
+            Self::RpcUnavailable => 502,          // 502 Bad Gateway
+            Self::SimulationFailed(_) => 422,     // 422 Unprocessable Entity
+            Self::ContractNotInitialized => 500,  // 500 Internal Server Error
+            Self::Unknown(_) => 500,              // 500 Internal Server Error
+        }
+    }
+
+    /// Parses error logs, Soroban simulation outputs, or CLI errors into the taxonomy.
+    pub fn from_error_str(err: &str) -> Self {
+        let lower = err.to_lowercase();
+        if lower.contains("proof already claimed")
+            || lower.contains("already claimed")
+            || lower.contains("unreachablecodereached")
+        {
+            Self::ReplayDetected
+        } else if lower.contains("require_auth")
+            || lower.contains("unauthorized")
+            || lower.contains("bad auth")
+            || lower.contains("no private key")
+            || lower.contains("missing auth")
+        {
+            Self::UnauthorizedSigner
+        } else if lower.contains("insufficient escrow balance")
+            || lower.contains("insufficient balance")
+            || lower.contains("insufficient funds")
+        {
+            Self::InsufficientPoolBalance
+        } else if lower.contains("not initialized") {
+            Self::ContractNotInitialized
+        } else if lower.contains("timeout") || lower.contains("deadline") {
+            Self::RpcTimeout
+        } else if lower.contains("connection refused")
+            || lower.contains("forbidden")
+            || lower.contains("unavailable")
+        {
+            Self::RpcUnavailable
+        } else if lower.contains("simulation failed") {
+            Self::SimulationFailed(err.to_string())
+        } else {
+            Self::Unknown(err.to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_taxonomy_status_codes() {
+        assert_eq!(EscrowError::ReplayDetected.http_status(), 409);
+        assert_eq!(EscrowError::UnauthorizedSigner.http_status(), 403);
+        assert_eq!(EscrowError::InsufficientPoolBalance.http_status(), 503);
+        assert_eq!(EscrowError::InvalidProofFormat.http_status(), 400);
+        assert_eq!(EscrowError::RpcTimeout.http_status(), 504);
+        assert_eq!(EscrowError::RpcUnavailable.http_status(), 502);
+        assert_eq!(
+            EscrowError::SimulationFailed("fail".into()).http_status(),
+            422
+        );
+        assert_eq!(EscrowError::ContractNotInitialized.http_status(), 500);
+        assert_eq!(EscrowError::Unknown("other".into()).http_status(), 500);
+    }
+
+    #[test]
+    fn test_from_error_str_patterns() {
+        assert_eq!(
+            EscrowError::from_error_str(
+                "Error(WasmVm, InvalidAction): VM call trapped: UnreachableCodeReached"
+            ),
+            EscrowError::ReplayDetected
+        );
+        assert_eq!(
+            EscrowError::from_error_str(
+                "panic: EchoGrid: proof already claimed — replay attack blocked"
+            ),
+            EscrowError::ReplayDetected
+        );
+        assert_eq!(
+            EscrowError::from_error_str("HostError: require_auth failed for address"),
+            EscrowError::UnauthorizedSigner
+        );
+        assert_eq!(
+            EscrowError::from_error_str(
+                "HostError: EchoGrid: insufficient escrow balance — municipality must top up"
+            ),
+            EscrowError::InsufficientPoolBalance
+        );
+        assert_eq!(
+            EscrowError::from_error_str("Timeout waiting for transaction confirmation"),
+            EscrowError::RpcTimeout
+        );
+    }
 }
