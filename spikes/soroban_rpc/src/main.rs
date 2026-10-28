@@ -2,6 +2,9 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
+pub mod error_taxonomy;
+pub use error_taxonomy::EscrowError;
+
 pub const DEFAULT_TESTNET_RPC_URL: &str = "https://soroban-testnet.stellar.org";
 pub const DEFAULT_TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 pub const DEFAULT_CONTRACT_ID: &str = "CANCKQXV4H6PCJ6DTAOIVMGUFYN2J4GTHJWFEUYZEHP3RFZBZHTBF6SX";
