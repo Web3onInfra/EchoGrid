@@ -232,6 +232,32 @@ impl NegaWattEscrow {
         Ok(())
     }
 
+    /// **Withdraw** — Withdraw funds from the escrow pool back to a destination address.
+    ///
+    /// Municipality-only. Bounded by pool balance. Allowed while paused.
+    pub fn withdraw(env: Env, to: Address, amount: i128) -> Result<(), Error> {
+        let _municipality = Self::require_municipality_role(&env)?;
+
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+
+        let token_id: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenId)
+            .ok_or(Error::NotInitialized)?;
+
+        let balance = TokenClient::new(&env, &token_id).balance(&env.current_contract_address());
+        if balance < amount {
+            return Err(Error::InsufficientBalance);
+        }
+
+        TokenClient::new(&env, &token_id).transfer(&env.current_contract_address(), &to, &amount);
+
+        Ok(())
+    }
+
     /// **Set Bounty** — Update the per-claim NegaWatt payout rate.
     ///
     /// Allows the municipality to react to grid conditions — higher bounties
@@ -1306,5 +1332,70 @@ mod test {
 
         client.payout(&user, &proof);
         assert_eq!(client.pool_balance(), 4_900_i128);
+    }
+
+    #[test]
+    fn test_withdraw_success() {
+        let (env, token_id, client, _, _, recipient) = setup();
+        client.deposit(&5_000_i128);
+        assert_eq!(client.pool_balance(), 5_000_i128);
+
+        client.withdraw(&recipient, &2_000_i128);
+        assert_eq!(client.pool_balance(), 3_000_i128);
+
+        let token = TokenClient::new(&env, &token_id);
+        assert_eq!(token.balance(&recipient), 2_000_i128);
+    }
+
+    #[test]
+    fn test_withdraw_over_withdraw_fails() {
+        let (_, _, client, _, _, recipient) = setup();
+        client.deposit(&1_000_i128);
+
+        assert_eq!(
+            client.try_withdraw(&recipient, &1_001_i128).unwrap_err(),
+            Ok(Error::InsufficientBalance)
+        );
+    }
+
+    #[test]
+    fn test_withdraw_invalid_amount_fails() {
+        let (_, _, client, _, _, recipient) = setup();
+        client.deposit(&1_000_i128);
+
+        assert_eq!(
+            client.try_withdraw(&recipient, &0_i128).unwrap_err(),
+            Ok(Error::InvalidAmount)
+        );
+        assert_eq!(
+            client.try_withdraw(&recipient, &-50_i128).unwrap_err(),
+            Ok(Error::InvalidAmount)
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_withdraw_wrong_caller_fails() {
+        let (env, _, client, _, _, recipient) = setup();
+        client.deposit(&2_000_i128);
+        env.mock_auths(&[]);
+        client.withdraw(&recipient, &1_000_i128);
+    }
+
+    #[test]
+    fn test_withdraw_while_paused() {
+        let (env, token_id, client, _, _, recipient) = setup();
+        client.deposit(&4_000_i128);
+
+        // Pause contract
+        client.pause();
+        assert!(client.is_paused());
+
+        // Withdraw must succeed even while paused
+        client.withdraw(&recipient, &1_500_i128);
+        assert_eq!(client.pool_balance(), 2_500_i128);
+
+        let token = TokenClient::new(&env, &token_id);
+        assert_eq!(token.balance(&recipient), 1_500_i128);
     }
 }
