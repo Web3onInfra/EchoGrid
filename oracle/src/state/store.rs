@@ -16,6 +16,8 @@ pub trait StateStore: Send + Sync {
 
     async fn save_claim(&self, claim: Claim) -> Result<(), StoreError>;
     async fn get_claim(&self, id: &str) -> Result<Option<Claim>, StoreError>;
+    async fn get_claim_by_proof_hash(&self, proof_hash: &str) -> Result<Option<Claim>, StoreError>;
+    async fn get_in_flight_claims(&self) -> Result<Vec<Claim>, StoreError>;
     async fn update_claim_status(
         &self,
         id: &str,
