@@ -23,3 +23,14 @@ band-snr:
 eval:
     cd research/hum_detection; uv run python -m echogrid_hum.eval
 
+# Deploy oracle to Fly.io
+deploy-fly:
+    fly deploy
+
+# View live oracle logs on Fly.io
+logs-fly:
+    fly logs
+
+# Check live oracle status on Fly.io
+status-fly:
+    fly status

@@ -1,0 +1,59 @@
+# Fly.io deployment configuration for EchoGrid Oracle
+# Reference: https://fly.io/docs/reference/configuration/
+
+app = "echogrid-oracle"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ORACLE_MODE = "live"
+  HOST = "0.0.0.0"
+  PORT = "8080"
+  DATABASE_URL = "/data/echogrid.db"
+  RUST_LOG = "info,echogrid_oracle=debug"
+  SOROBAN_RPC_URL = "https://soroban-testnet.stellar.org"
+  NETWORK_PASSPHRASE = "Test SDF Network ; September 2015"
+  CONTRACT_ID = "CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF"
+  TOKEN_CONTRACT_ID = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+  ALLOWED_ORIGINS = "https://echogrid.app,https://staging.echogrid.app"
+  TRUST_PROXY = "true"
+  CHALLENGE_TTL_SECONDS = "120"
+  COOLDOWN_SECONDS = "600"
+  WALLET_DAILY_CLAIM_LIMIT = "2"
+  ORACLE_DAILY_CAP_STROOPS = "100000000"
+  BOUNTY_STROOPS = "10000000"
+  RATE_LIMIT_PER_MIN = "30"
+  CHALLENGE_RATE_PER_MIN = "6"
+  SYNC_WAIT_TIMEOUT_SECONDS = "20"
+  REQUEST_TIMEOUT_SECONDS = "30"
+
+[mounts]
+  source = "echogrid_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/api/v1/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
