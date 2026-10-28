@@ -3,6 +3,7 @@
 //! Boots the Axum HTTP server, configures middleware (CORS, tracing), and
 //! registers all routes.
 
+pub mod chain;
 pub mod config;
 pub mod error;
 mod routes;
