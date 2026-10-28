@@ -20,9 +20,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype,
-    token::Client as TokenClient,
-    Address, BytesN, Env, Symbol,
+    contract, contractimpl, contracttype, token::Client as TokenClient, Address, BytesN, Env,
+    Symbol,
 };
 
 // ---------------------------------------------------------------------------
@@ -109,15 +108,11 @@ impl NegaWattEscrow {
         env.storage()
             .instance()
             .set(&DataKey::OracleAddress, &oracle);
-        env.storage()
-            .instance()
-            .set(&DataKey::TokenId, &token);
+        env.storage().instance().set(&DataKey::TokenId, &token);
         env.storage()
             .instance()
             .set(&DataKey::BountyPerClaim, &bounty);
-        env.storage()
-            .instance()
-            .set(&DataKey::Initialized, &true);
+        env.storage().instance().set(&DataKey::Initialized, &true);
     }
 
     // -----------------------------------------------------------------------
@@ -149,7 +144,7 @@ impl NegaWattEscrow {
         // Transfer USDC from the municipality wallet into *this* contract.
         // The SDK handles the SAC (Stellar Asset Contract) cross-call here.
         TokenClient::new(&env, &token_id).transfer(
-            &municipality,               // from: the municipality's account
+            &municipality,                   // from: the municipality's account
             &env.current_contract_address(), // to: this escrow contract
             &amount,
         );
@@ -175,8 +170,10 @@ impl NegaWattEscrow {
             .instance()
             .set(&DataKey::BountyPerClaim, &new_bounty);
 
-        env.events()
-            .publish((Symbol::new(&env, EVENT_BOUNTY_SET), municipality), new_bounty);
+        env.events().publish(
+            (Symbol::new(&env, EVENT_BOUNTY_SET), municipality),
+            new_bounty,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -224,8 +221,7 @@ impl NegaWattEscrow {
             .expect("EchoGrid: bounty not set");
 
         // Sanity-check: make sure the escrow still has enough funds.
-        let balance = TokenClient::new(&env, &token_id)
-            .balance(&env.current_contract_address());
+        let balance = TokenClient::new(&env, &token_id).balance(&env.current_contract_address());
         if balance < bounty {
             panic!("EchoGrid: insufficient escrow balance — municipality must top up");
         }
@@ -233,15 +229,13 @@ impl NegaWattEscrow {
         // Transfer the NegaWatt bounty from escrow → user wallet.
         TokenClient::new(&env, &token_id).transfer(
             &env.current_contract_address(), // from: escrow
-            &recipient,                       // to: verified user
+            &recipient,                      // to: verified user
             &bounty,
         );
 
         // Mark this proof as spent so it can never be replayed.
         // We use `persistent` storage so it survives ledger expiry TTLs.
-        env.storage()
-            .persistent()
-            .set(&claim_key, &true);
+        env.storage().persistent().set(&claim_key, &true);
 
         // Extend the TTL of the claim record for ~1 year (≈ 6M ledgers @ 5s/ledger).
         // Without this, the entry would expire and a replay could succeed.
@@ -267,8 +261,7 @@ impl NegaWattEscrow {
             .instance()
             .get(&DataKey::TokenId)
             .expect("EchoGrid: not initialized");
-        TokenClient::new(&env, &token_id)
-            .balance(&env.current_contract_address())
+        TokenClient::new(&env, &token_id).balance(&env.current_contract_address())
     }
 
     /// Returns the current per-claim NegaWatt bounty (in stroops).
@@ -326,34 +319,38 @@ impl NegaWattEscrow {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{
-        testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
-        token::{Client as TokenClient, StellarAssetClient},
-        Address, BytesN, Env, IntoVal,
-    };
+    use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, Address, BytesN, Env};
 
     /// Helper: deploy a fresh contract and a mock USDC token, returning
     /// handles for all three parties (municipality, oracle, user).
-    fn setup() -> (Env, Address, NegaWattEscrowClient<'static>, Address, Address, Address) {
+    fn setup() -> (
+        Env,
+        Address,
+        NegaWattEscrowClient<'static>,
+        Address,
+        Address,
+        Address,
+    ) {
         let env = Env::default();
         // Allow all auth in tests — we test auth separately.
         env.mock_all_auths();
 
         let municipality = Address::generate(&env);
-        let oracle       = Address::generate(&env);
-        let user         = Address::generate(&env);
+        let oracle = Address::generate(&env);
+        let user = Address::generate(&env);
 
         // Deploy a Stellar Asset Contract (mock USDC) for testing.
-        let token_admin  = Address::generate(&env);
-        let token_id     = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin.clone())
+            .address();
 
         // Mint 10_000 USDC (in stroops) to the municipality so it can deposit.
-        StellarAssetClient::new(&env, &token_id)
-            .mint(&municipality, &10_000_i128);
+        StellarAssetClient::new(&env, &token_id).mint(&municipality, &10_000_i128);
 
         // Deploy the NegaWatt escrow contract.
-        let contract_id = env.register(NegaWattEscrow, ());
-        let client      = NegaWattEscrowClient::new(&env, &contract_id);
+        let contract_id = env.register_contract(None, NegaWattEscrow);
+        let client = NegaWattEscrowClient::new(&env, &contract_id);
 
         // Initialize with a 100-stroop bounty per NegaWatt event.
         client.initialize(&municipality, &oracle, &token_id, &100_i128);
@@ -363,22 +360,22 @@ mod test {
 
     #[test]
     fn test_deposit_and_balance() {
-        let (_, _, client, municipality, _, _) = setup();
+        let (_, _, client, _, _, _) = setup();
 
-        client.deposit(&municipality, /* amount */ &5_000_i128);
+        client.deposit(&5_000_i128);
         assert_eq!(client.escrow_balance(), 5_000_i128);
     }
 
     #[test]
     fn test_payout_reduces_balance() {
-        let (env, _, client, municipality, oracle, user) = setup();
+        let (env, _, client, _, _, user) = setup();
 
         // Municipality deposits 500 stroops.
-        client.deposit(&municipality, &500_i128);
+        client.deposit(&500_i128);
 
         // Oracle submits a valid proof — simulate a NegaWatt event.
         let proof: BytesN<32> = BytesN::from_array(&env, &[1u8; 32]);
-        client.payout(&oracle, &user, &proof);
+        client.payout(&user, &proof);
 
         // Balance should be 500 - 100 (bounty) = 400.
         assert_eq!(client.escrow_balance(), 400_i128);
@@ -387,16 +384,16 @@ mod test {
     #[test]
     #[should_panic(expected = "proof already claimed")]
     fn test_replay_attack_blocked() {
-        let (env, _, client, municipality, oracle, user) = setup();
+        let (env, _, client, _, _, user) = setup();
 
-        client.deposit(&municipality, &1_000_i128);
+        client.deposit(&1_000_i128);
         let proof: BytesN<32> = BytesN::from_array(&env, &[2u8; 32]);
 
         // First claim — should succeed.
-        client.payout(&oracle, &user, &proof);
+        client.payout(&user, &proof);
 
         // Second claim with the same proof — must panic.
-        client.payout(&oracle, &user, &proof);
+        client.payout(&user, &proof);
     }
 
     #[test]
@@ -410,8 +407,8 @@ mod test {
 
     #[test]
     fn test_set_bounty() {
-        let (_, _, client, municipality, _, _) = setup();
-        client.set_bounty(&municipality, &250_i128);
+        let (_, _, client, _, _, _) = setup();
+        client.set_bounty(&250_i128);
         assert_eq!(client.bounty(), 250_i128);
     }
 }
