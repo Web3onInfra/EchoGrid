@@ -26,6 +26,8 @@ jobs:
           filters: |
             contract:
               - 'contracts/negawatt_escrow/**'
+              - 'scripts/**'
+              - 'deployments/**'
               - '.github/workflows/**'
             rust:
               - 'oracle/**'
@@ -130,4 +132,12 @@ jobs:
 
       - name: Build WASM Target
         run: cargo build --manifest-path contracts/negawatt_escrow/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - name: Install Stellar CLI
+        run: |
+          curl -fsSL https://github.com/stellar/stellar-cli/releases/download/v28.1.0/stellar-cli-28.1.0-x86_64-unknown-linux-gnu.tar.gz | sudo tar -xz -C /usr/local/bin
+          stellar --version
+
+      - name: Build, Optimize & Enforce Size Budget
+        run: bash scripts/build_contract.sh
 

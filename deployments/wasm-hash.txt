@@ -1,0 +1,1 @@
+68d41a5f281e3161e109acf08891b02ba292608f617bae7cb1e7926165c2868d  negawatt_escrow.optimized.wasm  25455
