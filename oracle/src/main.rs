@@ -4,6 +4,7 @@
 //! registers all routes.
 
 pub mod config;
+pub mod error;
 mod routes;
 mod stellar;
 mod types;
