@@ -123,6 +123,20 @@ const EVENT_ORACLE_ROTATED: &str = "negawatt_oracle_rotated";
 const EVENT_WITHDRAWN: &str = "negawatt_withdrawn";
 
 // ---------------------------------------------------------------------------
+// ── TTL Rent Parameters ───────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+
+/// Threshold in ledgers before extending instance TTL (~7 days @ 5s/ledger).
+pub const INSTANCE_TTL_THRESHOLD: u32 = 120_960;
+/// Target in ledgers to extend instance TTL to (~31 days @ 5s/ledger).
+pub const INSTANCE_EXTEND_TO: u32 = 535_680;
+
+/// Threshold in ledgers before extending persistent claim TTL (~30 days).
+pub const PERSISTENT_CLAIM_THRESHOLD: u32 = 518_400;
+/// Maximum extension for persistent claim TTL (~347 days / ~6M ledgers).
+pub const PERSISTENT_CLAIM_EXTEND_TO: u32 = 6_000_000;
+
+// ---------------------------------------------------------------------------
 // ── Contract Entry Point ────────────────────────────────────────────────────
 // ---------------------------------------------------------------------------
 
@@ -205,6 +219,8 @@ impl NegaWattEscrow {
             (oracle.clone(), token.clone(), bounty),
         );
 
+        Self::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -246,6 +262,8 @@ impl NegaWattEscrow {
         env.events()
             .publish((Symbol::new(&env, EVENT_DEPOSITED), municipality), amount);
 
+        Self::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -276,6 +294,8 @@ impl NegaWattEscrow {
             (Symbol::new(&env, EVENT_WITHDRAWN), municipality, to),
             amount,
         );
+
+        Self::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -318,6 +338,8 @@ impl NegaWattEscrow {
             config,
         );
 
+        Self::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -349,6 +371,8 @@ impl NegaWattEscrow {
             (Symbol::new(&env, EVENT_CONFIG_UPDATED), municipality),
             config,
         );
+
+        Self::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -382,6 +406,8 @@ impl NegaWattEscrow {
             config,
         );
 
+        Self::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -409,6 +435,8 @@ impl NegaWattEscrow {
             config,
         );
 
+        Self::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -425,6 +453,8 @@ impl NegaWattEscrow {
         env.events()
             .publish((Symbol::new(&env, EVENT_PAUSED), municipality), ());
 
+        Self::extend_instance_ttl(&env);
+
         Ok(())
     }
 
@@ -440,6 +470,8 @@ impl NegaWattEscrow {
 
         env.events()
             .publish((Symbol::new(&env, EVENT_UNPAUSED), municipality), ());
+
+        Self::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -468,6 +500,8 @@ impl NegaWattEscrow {
             (Symbol::new(&env, EVENT_ORACLE_ROTATED), municipality),
             (old_oracle, new_oracle),
         );
+
+        Self::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -593,15 +627,19 @@ impl NegaWattEscrow {
 
         // Extend the TTL of the claim record for ~1 year (≈ 6M ledgers @ 5s/ledger).
         // Without this, the entry would expire and a replay could succeed.
-        env.storage()
-            .persistent()
-            .extend_ttl(&claim_key, 6_000_000, 6_000_000);
+        env.storage().persistent().extend_ttl(
+            &claim_key,
+            PERSISTENT_CLAIM_THRESHOLD,
+            PERSISTENT_CLAIM_EXTEND_TO,
+        );
 
         // Emit payout event — indexers will use this to build the user dashboard.
         env.events().publish(
             (Symbol::new(&env, EVENT_PAYOUT), oracle, recipient.clone()),
             (bounty, proof_hash.clone()),
         );
+
+        Self::extend_instance_ttl(&env);
 
         Ok(())
     }
@@ -714,6 +752,13 @@ impl NegaWattEscrow {
             .ok_or(Error::NotInitialized)?;
         oracle.require_auth();
         Ok(oracle)
+    }
+
+    /// Extends instance storage TTL so contract state remains live without rent decay.
+    fn extend_instance_ttl(env: &Env) {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_EXTEND_TO);
     }
 }
 
@@ -1566,5 +1611,28 @@ mod test {
         assert_eq!(sym, Symbol::new(&env, EVENT_WITHDRAWN));
         let withdraw_amount = i128::try_from_val(&env, &withdraw_event.2).unwrap();
         assert_eq!(withdraw_amount, 1_000_i128);
+    }
+
+    #[test]
+    fn test_persistent_replay_hash_ttl_survives_ledger_advancement() {
+        let (env, _, client, _, _, user) = setup();
+        client.deposit(&5_000_i128);
+
+        let proof = BytesN::from_array(&env, &[88u8; 32]);
+        client.payout(&user, &proof);
+        assert!(client.is_claimed(&proof));
+
+        // Advance ledger sequence by 100,000 ledgers (far beyond default 4,096 threshold)
+        let current_seq = env.ledger().sequence();
+        env.ledger().set_sequence_number(current_seq + 100_000);
+
+        // The claim entry must STILL exist and survive due to extend_ttl
+        assert!(client.is_claimed(&proof));
+
+        // Replay attempt after 100,000 ledgers is still rejected
+        assert_eq!(
+            client.try_payout(&user, &proof).unwrap_err(),
+            Ok(Error::ReplayClaim)
+        );
     }
 }
