@@ -89,6 +89,13 @@ impl ApiError {
         }
     }
 
+    pub fn unprocessable_entity(code: impl Into<String>, msg: impl Into<String>) -> Self {
+        Self::UnprocessableEntity {
+            code: code.into(),
+            message: msg.into(),
+        }
+    }
+
     pub fn too_many_requests(code: impl Into<String>, msg: impl Into<String>) -> Self {
         Self::TooManyRequests {
             code: code.into(),

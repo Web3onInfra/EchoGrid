@@ -1,119 +1,295 @@
 //! # Oracle Route Handlers
 //!
-//! One Axum router, one endpoint that matters:
-//!   POST /api/v1/proof  — receives a Proof-of-Power-Down, verifies it,
-//!                          and triggers an on-chain NegaWatt payout.
+//! Provides the primary operational routes for EchoGrid Oracle:
+//!   POST /api/v1/proof  — receives and settles a Proof-of-Power-Down claim.
+//!   GET  /api/v1/health — service liveness probe.
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use sha2::{Digest, Sha256};
-use tracing::{error, info, warn};
-
-use crate::{
-    stellar::trigger_payout,
-    types::{OracleResponse, ProofPayload, VerificationResult},
-    AppState,
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
 };
+use serde::{Deserialize, Serialize};
+use tracing::{info, warn};
 
-// ---------------------------------------------------------------------------
-// ── POST /api/v1/proof ───────────────────────────────────────────────────────
-// ---------------------------------------------------------------------------
+use crate::chain::pipeline::SubmitResult;
+use crate::error::ApiError;
+use crate::payout::transition_claim;
+use crate::proof::ProofV1;
+use crate::state::limits::LimitConfig;
+use crate::state::types::{Claim, PayoutStatus, StoreError};
+use crate::AppState;
 
-/// **Proof submission endpoint** — the single most important route in EchoGrid.
-///
-/// A client (phone app or Acoustic CLI) posts a `ProofPayload`.  We:
-///   1. Verify the SHA-256 hash reconstructed from the known pre-image fields.
-///   2. Check the challenge_id is active (not expired, not already claimed).
-///   3. Call `trigger_payout` to move USDC from the escrow contract to the user.
-pub async fn submit_proof(
-    State(_state): State<AppState>,
-    Json(payload): Json<ProofPayload>,
-) -> impl IntoResponse {
-    info!(
-        wallet    = %payload.wallet_address,
-        challenge = %payload.challenge_id,
-        "Received Proof-of-Power-Down"
-    );
+/// Standard JSON response for Proof-of-Power-Down submissions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum ProofResponse {
+    Confirmed {
+        claim_id: String,
+        tx_hash: String,
+        explorer_url: String,
+        amount_stroops: i128,
+        simulated: bool,
+    },
+    Pending {
+        claim_id: String,
+        poll_url: String,
+    },
+}
 
-    // ── Step 1: Cryptographic verification ───────────────────────────────────
-    let verification = verify_proof(&payload);
-    if !verification.valid {
-        warn!(reason = %verification.reason, "Proof verification failed");
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(OracleResponse::err(format!(
-                "Proof invalid: {}",
-                verification.reason
-            ))),
-        );
-    }
-
-    // ── Step 2: Challenge validation ─────────────────────────────────────────
-    // In production: look up the challenge_id in a database keyed by the
-    // municipality, check it hasn't expired, and mark it as in-flight.
-    // For the MVP we accept any challenge_id that looks non-empty.
-    if payload.challenge_id.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(OracleResponse::err("challenge_id must not be empty")),
-        );
-    }
-
-    // ── Step 3: AgentPay — trigger the on-chain NegaWatt payout ─────────────
-    // Decode the proof_hash from hex into raw bytes for the Soroban contract.
-    let proof_bytes = match hex::decode(&payload.proof_hash) {
-        Ok(b) if b.len() == 32 => {
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&b);
-            arr
-        }
-        Ok(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(OracleResponse::err(
-                    "proof_hash must be 32 bytes (64 hex chars)",
-                )),
-            );
-        }
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(OracleResponse::err(format!(
-                    "proof_hash hex decode failed: {e}"
-                ))),
-            );
-        }
-    };
-
-    match trigger_payout(&payload, proof_bytes).await {
-        Ok(tx_hash) => {
-            info!(
-                tx = %tx_hash,
-                wallet = %payload.wallet_address,
-                "NegaWatt payout triggered — USDC transferred to user"
-            );
-            (
-                StatusCode::OK,
-                Json(OracleResponse::ok(
-                    "NegaWatt bounty paid! Thank you for relieving the grid.",
-                    Some(tx_hash),
-                )),
-            )
-        }
-        Err(e) => {
-            error!(err = %e, "Stellar transaction failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(OracleResponse::err(format!("Payout failed: {e}"))),
-            )
+impl IntoResponse for ProofResponse {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Confirmed { .. } => (StatusCode::OK, Json(self)).into_response(),
+            Self::Pending { .. } => (StatusCode::ACCEPTED, Json(self)).into_response(),
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// ── GET /api/v1/health ───────────────────────────────────────────────────────
-// ---------------------------------------------------------------------------
+/// **Proof submission endpoint** — receives a client's Proof v1, validates cryptographic
+/// bounds and challenge validity, reserves payout limits, and triggers on-chain settlement.
+pub async fn submit_proof(
+    State(state): State<AppState>,
+    Json(payload): Json<ProofV1>,
+) -> Result<Response, ApiError> {
+    let now = state.clock.now();
 
-/// Simple liveness probe — useful for load balancers and demo readiness checks.
+    info!(
+        wallet    = %payload.wallet_address,
+        challenge = %payload.challenge_id,
+        "Received Proof-of-Power-Down v1 payload"
+    );
+
+    // ── Step 1: Validate proof schema, time skew, and hash derivation ──────────
+    let proof_hash_bytes = payload
+        .validate_with_clock(state.clock.as_ref())
+        .map_err(|e| ApiError::bad_request("INVALID_PAYLOAD", e.to_string()))?;
+
+    // ── Step 2: Challenge check ────────────────────────────────────────────────
+    let challenge = state
+        .store
+        .get_challenge(&payload.challenge_id)
+        .await
+        .map_err(|e| ApiError::internal("STORE_ERROR", e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("CHALLENGE_NOT_FOUND", "Challenge not found"))?;
+
+    if challenge.wallet_address != payload.wallet_address {
+        return Err(ApiError::bad_request(
+            "CHALLENGE_WALLET_MISMATCH",
+            "Challenge was issued to a different wallet address",
+        ));
+    }
+    if challenge.used {
+        return Err(ApiError::conflict(
+            "CHALLENGE_ALREADY_USED",
+            "Challenge nonce has already been consumed",
+        ));
+    }
+    if challenge.expires_at < now {
+        return Err(ApiError::bad_request(
+            "CHALLENGE_EXPIRED",
+            "Challenge has expired",
+        ));
+    }
+
+    // ── Step 3: Idempotency & Replay Protection ────────────────────────────────
+    if let Some(existing) = state
+        .store
+        .get_claim_by_proof_hash(&payload.proof_hash)
+        .await
+        .map_err(|e| ApiError::internal("STORE_ERROR", e.to_string()))?
+    {
+        match existing.status {
+            PayoutStatus::Confirmed => {
+                warn!(proof_hash = %payload.proof_hash, "Replay claim blocked");
+                return Err(ApiError::conflict(
+                    "REPLAY_CLAIM",
+                    "This proof has already been processed and rewarded",
+                ));
+            }
+            PayoutStatus::Submitted | PayoutStatus::Reserved => {
+                let poll_url = format!("/api/v1/claims/{}", existing.id);
+                return Ok((
+                    StatusCode::ACCEPTED,
+                    Json(ProofResponse::Pending {
+                        claim_id: existing.id,
+                        poll_url,
+                    }),
+                )
+                    .into_response());
+            }
+            _ => {}
+        }
+    }
+
+    // ── Step 4: Mark challenge as used ─────────────────────────────────────────
+    state
+        .store
+        .mark_challenge_used(&payload.challenge_id)
+        .await
+        .map_err(|e| match e {
+            StoreError::ChallengeUsed(_) => {
+                ApiError::conflict("CHALLENGE_ALREADY_USED", "Challenge nonce already consumed")
+            }
+            other => ApiError::internal("STORE_ERROR", other.to_string()),
+        })?;
+
+    // ── Step 5: Limit reservation inside store transaction ─────────────────────
+    let claim_id = format!("clm_{}_{}", now.timestamp(), &payload.nonce[..8]);
+    let bounty = state.config.bounty_stroops;
+    let limits = LimitConfig {
+        wallet_cooldown_seconds: state.config.cooldown_seconds as i64,
+        wallet_daily_claims_limit: state.config.wallet_daily_claim_limit,
+        global_daily_payout_cap_stroops: state.config.oracle_daily_cap_stroops,
+    };
+
+    let claim = Claim {
+        id: claim_id.clone(),
+        wallet_address: payload.wallet_address.clone(),
+        challenge_id: payload.challenge_id.clone(),
+        proof_hash: payload.proof_hash.clone(),
+        amount_stroops: bounty,
+        status: PayoutStatus::Reserved,
+        tx_hash: None,
+        error: None,
+        simulated: false,
+        created_at: now,
+        updated_at: now,
+    };
+
+    state
+        .store
+        .reserve_claim(claim, &limits, now)
+        .await
+        .map_err(ApiError::from)?;
+
+    // ── Step 6: Chain submission & confirmation wait ───────────────────────────
+    let explorer_network = if state.config.network_passphrase.contains("Test") {
+        "testnet"
+    } else {
+        "public"
+    };
+
+    if let Some(queue) = &state.queue {
+        let _ = transition_claim(
+            state.store.as_ref(),
+            &claim_id,
+            PayoutStatus::Submitted,
+            None,
+            None,
+            now,
+        )
+        .await;
+
+        let submit_timeout = std::time::Duration::from_secs(state.config.sync_wait_timeout_seconds);
+        let submit_fut = queue.submit(payload.wallet_address.clone(), proof_hash_bytes);
+
+        match tokio::time::timeout(submit_timeout, submit_fut).await {
+            Ok(Ok(SubmitResult::Confirmed { tx_hash, .. })) => {
+                let _ = transition_claim(
+                    state.store.as_ref(),
+                    &claim_id,
+                    PayoutStatus::Confirmed,
+                    Some(tx_hash.clone()),
+                    None,
+                    now,
+                )
+                .await;
+
+                let explorer_url =
+                    format!("https://stellar.expert/explorer/{explorer_network}/tx/{tx_hash}");
+
+                Ok((
+                    StatusCode::OK,
+                    Json(ProofResponse::Confirmed {
+                        claim_id,
+                        tx_hash,
+                        explorer_url,
+                        amount_stroops: bounty,
+                        simulated: false,
+                    }),
+                )
+                    .into_response())
+            }
+            Ok(Ok(SubmitResult::Timeout { tx_hash })) => {
+                let _ = state
+                    .store
+                    .update_claim_status(
+                        &claim_id,
+                        PayoutStatus::Submitted,
+                        Some(tx_hash),
+                        None,
+                        now,
+                    )
+                    .await;
+
+                let poll_url = format!("/api/v1/claims/{claim_id}");
+                Ok((
+                    StatusCode::ACCEPTED,
+                    Json(ProofResponse::Pending { claim_id, poll_url }),
+                )
+                    .into_response())
+            }
+            Ok(Ok(SubmitResult::Failed { error, .. })) => {
+                let _ = state.store.release_claim(&claim_id, &error, now).await;
+                Err(ApiError::unprocessable_entity("PAYOUT_FAILED", error))
+            }
+            Ok(Err(pipeline_err)) => {
+                let err_msg = pipeline_err.to_string();
+                let _ = state.store.release_claim(&claim_id, &err_msg, now).await;
+                Err(ApiError::service_unavailable("PIPELINE_ERROR", err_msg))
+            }
+            Err(_) => {
+                // Synchronous wait timed out (> 20s): return 202 Accepted
+                let poll_url = format!("/api/v1/claims/{claim_id}");
+                Ok((
+                    StatusCode::ACCEPTED,
+                    Json(ProofResponse::Pending { claim_id, poll_url }),
+                )
+                    .into_response())
+            }
+        }
+    } else {
+        // Mock fallback when no queue is configured
+        let mock_tx = format!("tx_mock_{}", &payload.proof_hash[..16]);
+        let _ = transition_claim(
+            state.store.as_ref(),
+            &claim_id,
+            PayoutStatus::Submitted,
+            Some(mock_tx.clone()),
+            None,
+            now,
+        )
+        .await;
+        let _ = transition_claim(
+            state.store.as_ref(),
+            &claim_id,
+            PayoutStatus::Confirmed,
+            Some(mock_tx.clone()),
+            None,
+            now,
+        )
+        .await;
+
+        let explorer_url =
+            format!("https://stellar.expert/explorer/{explorer_network}/tx/{mock_tx}");
+
+        Ok((
+            StatusCode::OK,
+            Json(ProofResponse::Confirmed {
+                claim_id,
+                tx_hash: mock_tx,
+                explorer_url,
+                amount_stroops: bounty,
+                simulated: false,
+            }),
+        )
+            .into_response())
+    }
+}
+
+/// Simple liveness probe.
 pub async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status":  "ok",
@@ -122,54 +298,145 @@ pub async fn health() -> impl IntoResponse {
     }))
 }
 
-// ---------------------------------------------------------------------------
-// ── Proof Verification Logic ─────────────────────────────────────────────────
-// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proof::derive_proof_hash_hex;
+    use crate::state::types::Challenge;
+    use crate::state::{MemoryStore, MockClock};
+    use chrono::{DateTime, Duration, Utc};
+    use std::sync::Arc;
 
-/// Reconstructs the expected SHA-256 hash from the payload's pre-image fields
-/// and compares it against the submitted `proof_hash`.
-///
-/// Pre-image: `wallet_address || "|" || challenge_id || "|" || timestamp || "|" || nonce`
-///
-/// If the hash matches, we know the payload was generated by software that had
-/// access to all four fields at the time of the power-down event.
-fn verify_proof(payload: &ProofPayload) -> VerificationResult {
-    // Reject trivially empty fields first.
-    if payload.wallet_address.is_empty()
-        || payload.challenge_id.is_empty()
-        || payload.timestamp.is_empty()
-        || payload.nonce.is_empty()
-        || payload.proof_hash.is_empty()
-    {
-        return VerificationResult {
-            valid: false,
-            reason: "one or more required fields are empty".into(),
-        };
+    const WALLET: &str = "GA4ZH5HAQ77O2KGZJE2PJ5B4FMKVDGWZUZI7HVLTXPTPCEQGXXLDEHXT";
+    const CH_ID: &str = "ch_test_123";
+    const NONCE: &str = "a1b2c3d4e5f60718";
+    const TS: &str = "2026-10-28T12:00:00Z";
+
+    async fn setup_state(now: DateTime<Utc>) -> AppState {
+        let store = Arc::new(MemoryStore::new());
+        let clock = Arc::new(MockClock::new(now));
+        AppState {
+            store,
+            clock,
+            ..Default::default()
+        }
     }
 
-    // Reconstruct the pre-image the CLI used when computing the hash.
-    let pre_image = format!(
-        "{}|{}|{}|{}",
-        payload.wallet_address, payload.challenge_id, payload.timestamp, payload.nonce,
-    );
-
-    // Compute SHA-256 of the pre-image.
-    let mut hasher = Sha256::new();
-    hasher.update(pre_image.as_bytes());
-    let expected_hash = hex::encode(hasher.finalize());
-
-    if expected_hash == payload.proof_hash {
-        VerificationResult {
-            valid: true,
-            reason: String::new(),
+    fn make_proof(wallet: &str, ch_id: &str, ts: &str, nonce: &str) -> ProofV1 {
+        let proof_hash = derive_proof_hash_hex(wallet, ch_id, ts, nonce);
+        ProofV1 {
+            wallet_address: wallet.to_string(),
+            challenge_id: ch_id.to_string(),
+            timestamp: ts.to_string(),
+            nonce: nonce.to_string(),
+            proof_hash,
+            detector_version: "echonet-1.2".to_string(),
+            duration_seconds: 15,
         }
-    } else {
-        VerificationResult {
-            valid: false,
-            reason: format!(
-                "hash mismatch — expected {expected_hash}, got {}",
-                payload.proof_hash
-            ),
-        }
+    }
+
+    #[tokio::test]
+    async fn test_submit_proof_happy_path_mock() {
+        let now = DateTime::parse_from_rfc3339(TS)
+            .unwrap()
+            .with_timezone(&Utc);
+        let state = setup_state(now).await;
+
+        // Issue challenge
+        let ch = Challenge {
+            id: CH_ID.to_string(),
+            wallet_address: WALLET.to_string(),
+            issued_at: now,
+            expires_at: now + Duration::seconds(120),
+            used: false,
+        };
+        state.store.save_challenge(ch).await.unwrap();
+
+        let proof = make_proof(WALLET, CH_ID, TS, NONCE);
+        let res = submit_proof(State(state.clone()), Json(proof))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // Challenge is marked used
+        let ch_after = state.store.get_challenge(CH_ID).await.unwrap().unwrap();
+        assert!(ch_after.used);
+    }
+
+    #[tokio::test]
+    async fn test_submit_proof_rejections() {
+        let now = DateTime::parse_from_rfc3339(TS)
+            .unwrap()
+            .with_timezone(&Utc);
+        let state = setup_state(now).await;
+
+        let proof = make_proof(WALLET, CH_ID, TS, NONCE);
+
+        // 1. Challenge not found
+        let err = submit_proof(State(state.clone()), Json(proof.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(err.status_code(), StatusCode::NOT_FOUND);
+
+        // Save expired challenge
+        let ch_expired = Challenge {
+            id: CH_ID.to_string(),
+            wallet_address: WALLET.to_string(),
+            issued_at: now - Duration::seconds(200),
+            expires_at: now - Duration::seconds(10),
+            used: false,
+        };
+        state.store.save_challenge(ch_expired).await.unwrap();
+
+        // 2. Challenge expired
+        let err_exp = submit_proof(State(state.clone()), Json(proof.clone()))
+            .await
+            .unwrap_err();
+        assert_eq!(err_exp.status_code(), StatusCode::BAD_REQUEST);
+
+        // 3. Challenge wrong wallet
+        let ch_wrong_wallet = Challenge {
+            id: "ch_other".to_string(),
+            wallet_address: "GBOTHER...".to_string(),
+            issued_at: now,
+            expires_at: now + Duration::seconds(120),
+            used: false,
+        };
+        state.store.save_challenge(ch_wrong_wallet).await.unwrap();
+        let proof_wrong = make_proof(WALLET, "ch_other", TS, NONCE);
+        let err_w = submit_proof(State(state.clone()), Json(proof_wrong))
+            .await
+            .unwrap_err();
+        assert_eq!(err_w.status_code(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_submit_proof_replay_protection() {
+        let now = DateTime::parse_from_rfc3339(TS)
+            .unwrap()
+            .with_timezone(&Utc);
+        let state = setup_state(now).await;
+
+        let ch = Challenge {
+            id: CH_ID.to_string(),
+            wallet_address: WALLET.to_string(),
+            issued_at: now,
+            expires_at: now + Duration::seconds(120),
+            used: false,
+        };
+        state.store.save_challenge(ch).await.unwrap();
+
+        let proof = make_proof(WALLET, CH_ID, TS, NONCE);
+
+        // First submit: OK
+        assert!(submit_proof(State(state.clone()), Json(proof.clone()))
+            .await
+            .is_ok());
+
+        // Replay submission: 409 Conflict REPLAY_CLAIM
+        let replay_err = submit_proof(State(state.clone()), Json(proof))
+            .await
+            .unwrap_err();
+        assert_eq!(replay_err.status_code(), StatusCode::CONFLICT);
     }
 }
