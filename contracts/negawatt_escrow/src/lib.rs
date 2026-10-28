@@ -369,6 +369,28 @@ impl NegaWattEscrow {
         Ok(())
     }
 
+    /// **Set Oracle** — Rotates the authorized oracle key.
+    ///
+    /// Municipality-only. The old oracle key immediately loses authorization
+    /// to trigger payouts.
+    pub fn set_oracle(env: Env, new_oracle: Address) -> Result<(), Error> {
+        let _municipality = Self::require_municipality_role(&env)?;
+
+        let mut config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .ok_or(Error::NotInitialized)?;
+
+        config.oracle = new_oracle.clone();
+        env.storage().instance().set(&DataKey::Config, &config);
+        env.storage()
+            .instance()
+            .set(&DataKey::OracleAddress, &new_oracle);
+
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // ── Oracle Function (AgentGuard: ROLE_ORACLE / AgentPay) ────────────────
     // -----------------------------------------------------------------------
@@ -1204,5 +1226,85 @@ mod test {
         client.unpause();
         client.payout(&user, &proof2);
         assert_eq!(client.window_spent(), 100_i128);
+    }
+
+    #[test]
+    fn test_set_oracle_success_and_config() {
+        let (env, _, client, _, old_oracle, user) = setup();
+        client.deposit(&5_000_i128);
+
+        assert_eq!(client.get_config().oracle, old_oracle);
+
+        let new_oracle = Address::generate(&env);
+        client.set_oracle(&new_oracle);
+
+        assert_eq!(client.get_config().oracle, new_oracle);
+
+        let proof = BytesN::from_array(&env, &[61u8; 32]);
+        client.payout(&user, &proof);
+        assert_eq!(client.pool_balance(), 4_900_i128);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_oracle_auth_failure_non_municipality() {
+        let (env, _, client, _, _, _) = setup();
+        let new_oracle = Address::generate(&env);
+        env.mock_auths(&[]);
+        client.set_oracle(&new_oracle);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_oracle_old_key_rejected() {
+        let (env, _, client, _, old_oracle, user) = setup();
+        client.deposit(&5_000_i128);
+
+        let new_oracle = Address::generate(&env);
+        client.set_oracle(&new_oracle);
+
+        let proof = BytesN::from_array(&env, &[62u8; 32]);
+
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        use soroban_sdk::IntoVal;
+
+        env.mock_auths(&[MockAuth {
+            address: &old_oracle,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "payout",
+                args: (user.clone(), proof.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+
+        client.payout(&user, &proof);
+    }
+
+    #[test]
+    fn test_set_oracle_new_key_accepted() {
+        let (env, _, client, _, _, user) = setup();
+        client.deposit(&5_000_i128);
+
+        let new_oracle = Address::generate(&env);
+        client.set_oracle(&new_oracle);
+
+        let proof = BytesN::from_array(&env, &[63u8; 32]);
+
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        use soroban_sdk::IntoVal;
+
+        env.mock_auths(&[MockAuth {
+            address: &new_oracle,
+            invoke: &MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "payout",
+                args: (user.clone(), proof.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+
+        client.payout(&user, &proof);
+        assert_eq!(client.pool_balance(), 4_900_i128);
     }
 }
