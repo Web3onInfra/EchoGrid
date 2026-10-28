@@ -70,6 +70,7 @@ pub struct AppConfig {
     pub challenge_rate_per_min: u32,
     pub sync_wait_timeout_seconds: u64,
     pub simulator_mode: bool,
+    pub trust_proxy: bool,
 }
 
 impl fmt::Debug for AppConfig {
@@ -93,6 +94,7 @@ impl fmt::Debug for AppConfig {
             .field("wallet_daily_claim_limit", &self.wallet_daily_claim_limit)
             .field("oracle_daily_cap_stroops", &self.oracle_daily_cap_stroops)
             .field("bounty_stroops", &self.bounty_stroops)
+            .field("trust_proxy", &self.trust_proxy)
             .field("rate_limit_per_min", &self.rate_limit_per_min)
             .field("challenge_rate_per_min", &self.challenge_rate_per_min)
             .field("sync_wait_timeout_seconds", &self.sync_wait_timeout_seconds)
@@ -163,6 +165,9 @@ impl AppConfig {
         let simulator_mode = get_var("SIMULATOR_MODE")
             .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
             .unwrap_or(false);
+        let trust_proxy = get_var("TRUST_PROXY")
+            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+            .unwrap_or(false);
 
         let config = Self {
             mode,
@@ -185,6 +190,7 @@ impl AppConfig {
             challenge_rate_per_min,
             sync_wait_timeout_seconds,
             simulator_mode,
+            trust_proxy,
         };
 
         config.validate()?;
@@ -278,6 +284,15 @@ mod tests {
         assert_eq!(config.oracle_daily_cap_stroops, 100_000_000);
         assert_eq!(config.bounty_stroops, 10_000_000);
         assert_eq!(config.rate_limit_per_min, 30);
+        assert!(!config.trust_proxy);
+    }
+
+    #[test]
+    fn test_trust_proxy_config() {
+        let mut env_map = HashMap::<String, String>::new();
+        env_map.insert("TRUST_PROXY".into(), "true".into());
+        let config = AppConfig::from_env_source(|k| env_map.get(k).cloned()).unwrap();
+        assert!(config.trust_proxy);
     }
 
     #[test]
