@@ -345,6 +345,30 @@ impl NegaWattEscrow {
         Ok(())
     }
 
+    /// **Pause** — Emergency circuit breaker to halt payouts.
+    ///
+    /// Municipality-only.
+    pub fn pause(env: Env) -> Result<(), Error> {
+        let _municipality = Self::require_municipality_role(&env)?;
+        if !env.storage().instance().has(&DataKey::Config) {
+            return Err(Error::NotInitialized);
+        }
+        env.storage().instance().set(&DataKey::Paused, &true);
+        Ok(())
+    }
+
+    /// **Unpause** — Resume payout operations after a pause.
+    ///
+    /// Municipality-only.
+    pub fn unpause(env: Env) -> Result<(), Error> {
+        let _municipality = Self::require_municipality_role(&env)?;
+        if !env.storage().instance().has(&DataKey::Config) {
+            return Err(Error::NotInitialized);
+        }
+        env.storage().instance().set(&DataKey::Paused, &false);
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // ── Oracle Function (AgentGuard: ROLE_ORACLE / AgentPay) ────────────────
     // -----------------------------------------------------------------------
@@ -360,6 +384,11 @@ impl NegaWattEscrow {
     /// * `proof_hash` — The 32-byte SHA-256 hash that constitutes the
     ///   Proof-of-Power-Down.  Stored after use to prevent replay attacks.
     pub fn payout(env: Env, recipient: Address, proof_hash: BytesN<32>) -> Result<(), Error> {
+        // ── Emergency Circuit Breaker ───────────────────────────────────────
+        if Self::is_paused(env.clone()) {
+            return Err(Error::ContractPaused);
+        }
+
         // ── AgentGuard: ROLE_ORACLE ─────────────────────────────────────────
         let oracle = Self::require_oracle_role(&env)?;
 
@@ -1068,5 +1097,112 @@ mod test {
         // Payout succeeds in new window
         client.payout(&user, &p4);
         assert_eq!(client.recipient_window_claims(&user), 1);
+    }
+
+    #[test]
+    fn test_pause_and_unpause_success() {
+        let (_, _, client, _, _, _) = setup();
+        assert!(!client.is_paused());
+
+        client.pause();
+        assert!(client.is_paused());
+
+        client.unpause();
+        assert!(!client.is_paused());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_pause_auth_failure() {
+        let (env, _, client, _, _, _) = setup();
+        env.mock_auths(&[]);
+        client.pause();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_unpause_auth_failure() {
+        let (env, _, client, _, _, _) = setup();
+        client.pause();
+        env.mock_auths(&[]);
+        client.unpause();
+    }
+
+    #[test]
+    fn test_pause_blocks_payout_but_allows_deposit() {
+        let (env, _, client, _, _, user) = setup();
+        client.deposit(&2_000_i128);
+
+        let proof1 = BytesN::from_array(&env, &[41u8; 32]);
+
+        // Pause contract
+        client.pause();
+        assert!(client.is_paused());
+
+        // Payout fails while paused
+        assert_eq!(
+            client.try_payout(&user, &proof1).unwrap_err(),
+            Ok(Error::ContractPaused)
+        );
+
+        // Deposit is STILL allowed while paused
+        client.deposit(&1_000_i128);
+        assert_eq!(client.pool_balance(), 3_000_i128);
+
+        // Unpause
+        client.unpause();
+        assert!(!client.is_paused());
+
+        // Payout succeeds after unpause
+        client.payout(&user, &proof1);
+        assert_eq!(client.pool_balance(), 2_900_i128);
+    }
+
+    #[test]
+    fn test_pause_during_exhausted_budget() {
+        let (env, _, client, _, _, user) = setup();
+        client.deposit(&5_000_i128);
+
+        client.set_payout_cap(&100_i128);
+        client.set_window_budget(&100_i128);
+
+        let proof1 = BytesN::from_array(&env, &[51u8; 32]);
+        let proof2 = BytesN::from_array(&env, &[52u8; 32]);
+
+        // Payout consumes whole budget (100 stroops)
+        client.payout(&user, &proof1);
+        assert_eq!(client.window_spent(), 100_i128);
+
+        // Budget is now exhausted
+        assert_eq!(
+            client.try_payout(&user, &proof2).unwrap_err(),
+            Ok(Error::ExceedsWindowBudget)
+        );
+
+        // Municipality pauses contract while budget is exhausted
+        client.pause();
+        assert!(client.is_paused());
+
+        // Attempting payout now returns ContractPaused
+        assert_eq!(
+            client.try_payout(&user, &proof2).unwrap_err(),
+            Ok(Error::ContractPaused)
+        );
+
+        // Advance ledger timestamp to next window (+86_400 seconds)
+        let ts = env.ledger().timestamp();
+        env.ledger().set_timestamp(ts + 86_400);
+
+        // Budget rolled over, but contract is STILL paused
+        assert_eq!(client.window_spent(), 0_i128);
+        assert_eq!(
+            client.try_payout(&user, &proof2).unwrap_err(),
+            Ok(Error::ContractPaused)
+        );
+
+        // Unpause: payout immediately succeeds
+        client.unpause();
+        client.payout(&user, &proof2);
+        assert_eq!(client.window_spent(), 100_i128);
     }
 }
