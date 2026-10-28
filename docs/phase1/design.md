@@ -18,7 +18,7 @@ All amounts are stroops (`1 XLM = 10^7 stroops` in `i128`, no floating point):
 - **`per_payout_cap`**: `2 XLM` (`20_000_000` stroops). Single payouts exceeding this are rejected.
 - **`window_len`**: `86,400` seconds (24-hour fixed windows).
 - **`window_budget`**: `20 XLM` (`200_000_000` stroops) pool-wide maximum spend per window.
-- **`max_recipient_claims_per_window`**: `3` claims per recipient address per window.
+- **`max_recipient_window_claims`**: `3` claims per recipient address per window.
 - **Core Invariant**:
   $$\text{bounty} \le \text{per\_payout\_cap} \le \text{window\_budget}$$
   Enforced on every state-changing configuration write.
