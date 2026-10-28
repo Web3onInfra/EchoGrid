@@ -130,3 +130,16 @@ Every privileged function calls ddress.require_auth() — the Stellar network v
 4. Run the oracle with `cargo run --features live-network`
 
 The stellar.rs file contains a step-by-step guide for wiring up the XDR-building + Horizon submission code.
+
+### Production Deployment (Fly.io)
+
+```bash
+# 1. Provision persistent volume
+fly volumes create echogrid_data --size 1
+
+# 2. Configure secret key in platform vault
+fly secrets set ORACLE_SECRET_KEY="S..."
+
+# 3. Deploy via justfile
+just deploy-fly
+```
