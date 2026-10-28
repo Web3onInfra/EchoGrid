@@ -12,6 +12,8 @@ pub mod payout;
 pub mod proof;
 pub mod rate_limit;
 pub mod routes;
+#[cfg(test)]
+mod security_test;
 pub mod state;
 mod stellar;
 mod types;
