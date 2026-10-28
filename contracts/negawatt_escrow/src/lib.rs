@@ -242,19 +242,54 @@ impl NegaWattEscrow {
             return Err(Error::InvalidBounty);
         }
 
+        let mut config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .ok_or(Error::NotInitialized)?;
+
+        // Enforce invariant: bounty <= per_payout_cap
+        if new_bounty > config.per_payout_cap {
+            return Err(Error::InvariantViolated);
+        }
+
+        config.bounty = new_bounty;
+        env.storage().instance().set(&DataKey::Config, &config);
         env.storage()
             .instance()
             .set(&DataKey::BountyPerClaim, &new_bounty);
-
-        if let Some(mut config) = env.storage().instance().get::<_, Config>(&DataKey::Config) {
-            config.bounty = new_bounty;
-            env.storage().instance().set(&DataKey::Config, &config);
-        }
 
         env.events().publish(
             (Symbol::new(&env, EVENT_BOUNTY_SET), municipality),
             new_bounty,
         );
+
+        Ok(())
+    }
+
+    /// **Set Payout Cap** — Update the per-payout maximum ceiling.
+    ///
+    /// Municipality-only. Enforces invariant: bounty <= new_cap <= window_budget.
+    pub fn set_payout_cap(env: Env, new_cap: i128) -> Result<(), Error> {
+        let _municipality = Self::require_municipality_role(&env)?;
+
+        if new_cap <= 0 {
+            return Err(Error::InvalidCap);
+        }
+
+        let mut config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .ok_or(Error::NotInitialized)?;
+
+        // Enforce invariant: bounty <= new_cap <= window_budget
+        if config.bounty > new_cap || new_cap > config.window_budget {
+            return Err(Error::InvariantViolated);
+        }
+
+        config.per_payout_cap = new_cap;
+        env.storage().instance().set(&DataKey::Config, &config);
 
         Ok(())
     }
@@ -276,6 +311,12 @@ impl NegaWattEscrow {
     pub fn payout(env: Env, recipient: Address, proof_hash: BytesN<32>) -> Result<(), Error> {
         // ── AgentGuard: ROLE_ORACLE ─────────────────────────────────────────
         let oracle = Self::require_oracle_role(&env)?;
+
+        let config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .ok_or(Error::NotInitialized)?;
 
         // ── Replay-attack prevention ────────────────────────────────────────
         // Each proof_hash must be unique (it embeds timestamp + wallet + nonce).
@@ -302,6 +343,11 @@ impl NegaWattEscrow {
             .instance()
             .get(&DataKey::BountyPerClaim)
             .ok_or(Error::NotInitialized)?;
+
+        // Enforce per-payout cap
+        if bounty > config.per_payout_cap {
+            return Err(Error::ExceedsPayoutCap);
+        }
 
         // Sanity-check: make sure the escrow still has enough funds.
         let balance = TokenClient::new(&env, &token_id).balance(&env.current_contract_address());
@@ -698,6 +744,65 @@ mod test {
         assert_eq!(
             client.try_get_config().unwrap_err(),
             Ok(Error::NotInitialized)
+        );
+    }
+
+    #[test]
+    fn test_set_payout_cap_success() {
+        let (_, _, client, _, _, _) = setup();
+        // Default bounty is 100, budget is 200_000_000
+        client.set_payout_cap(&50_000_000_i128);
+        assert_eq!(client.get_config().per_payout_cap, 50_000_000_i128);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_payout_cap_auth_failure() {
+        let (env, _, client, _, _, _) = setup();
+        env.mock_auths(&[]);
+        client.set_payout_cap(&50_000_000_i128);
+    }
+
+    #[test]
+    fn test_set_payout_cap_invalid_or_invariant_fails() {
+        let (_, _, client, _, _, _) = setup();
+        // Negative / 0 cap
+        assert_eq!(
+            client.try_set_payout_cap(&0_i128).unwrap_err(),
+            Ok(Error::InvalidCap)
+        );
+        assert_eq!(
+            client.try_set_payout_cap(&-1_i128).unwrap_err(),
+            Ok(Error::InvalidCap)
+        );
+
+        // Invariant: bounty <= new_cap (bounty is 100)
+        assert_eq!(
+            client.try_set_payout_cap(&99_i128).unwrap_err(),
+            Ok(Error::InvariantViolated)
+        );
+
+        // Invariant: new_cap <= window_budget (budget is 200_000_000)
+        assert_eq!(
+            client.try_set_payout_cap(&200_000_001_i128).unwrap_err(),
+            Ok(Error::InvariantViolated)
+        );
+    }
+
+    #[test]
+    fn test_bounty_cap_boundary_enforcement() {
+        let (_, _, client, _, _, _) = setup();
+        // Set cap to exactly 1_000
+        client.set_payout_cap(&1_000_i128);
+
+        // Boundary: bounty == cap succeeds
+        client.set_bounty(&1_000_i128);
+        assert_eq!(client.bounty(), 1_000_i128);
+
+        // Boundary: bounty == cap + 1 fails
+        assert_eq!(
+            client.try_set_bounty(&1_001_i128).unwrap_err(),
+            Ok(Error::InvariantViolated)
         );
     }
 }
