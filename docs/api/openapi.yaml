@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: EchoGrid Oracle API
+  description: Live Soroban Oracle service for acoustic NegaWatt proof verification and payout settlement.
+  version: 0.1.0
+paths:
+  /api/v1/health:
+    get:
+      summary: Service liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                service: echogrid-oracle
+                version: 0.1.0
+  /api/v1/ready:
+    get:
+      summary: Service readiness deep check
+      responses:
+        '200':
+          description: Oracle is fully operational and connected to Soroban network
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfCheckReport'
+        '503':
+          description: Oracle is degraded or contract is paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfCheckReport'
+  /api/v1/version:
+    get:
+      summary: Service version and mode
+      responses:
+        '200':
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+              example:
+                service: echogrid-oracle
+                version: 0.1.0
+                mode: mock
+  /api/v1/config:
+    get:
+      summary: Public non-secret network and contract parameters
+      responses:
+        '200':
+          description: Public configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicConfigResponse'
+              example:
+                mode: mock
+                network: testnet
+                contract_id: CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF
+                token_id: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+                bounty_stroops: 10000000
+                oracle_daily_cap_stroops: 100000000
+                wallet_daily_claim_limit: 2
+                cooldown_seconds: 600
+                challenge_ttl_seconds: 120
+                simulator_mode: false
+                explorer_base_url: https://stellar.expert/explorer/testnet/tx
+  /api/v1/challenge:
+    get:
+      summary: Request single-use wallet-bound challenge
+      parameters:
+        - name: wallet
+          in: query
+          required: true
+          schema:
+            type: string
+          example: GA4ZH5HAQ77O2KGZJE2PJ5B4FMKVDGWZUZI7HVLTXPTPCEQGXXLDEHXT
+      responses:
+        '200':
+          description: Challenge issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeResponse'
+        '400':
+          description: Invalid Stellar wallet address format or CRC16 checksum
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: INVALID_WALLET_ADDRESS
+                message: Invalid Stellar G... address format or checksum
+                status: 400
+        '429':
+          description: Challenge issuance rate limit exceeded for wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: CHALLENGE_RATE_LIMIT_EXCEEDED
+                message: Challenge issuance rate limit of 6 per minute exceeded for wallet
+                status: 429
+  /api/v1/proof:
+    post:
+      summary: Submit Proof-of-Power-Down for settlement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProofV1'
+      responses:
+        '200':
+          description: Payout confirmed on-chain
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofConfirmedResponse'
+        '202':
+          description: Claim accepted for asynchronous settlement; poll /api/v1/claims/{id}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProofPendingResponse'
+        '400':
+          description: Proof schema or time bounds invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: INVALID_PROOF_HASH
+                message: Proof hash does not match computed SHA-256 pre-image
+                status: 400
+        '401':
+          description: Challenge expired or unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: CHALLENGE_EXPIRED
+                message: Challenge has expired
+                status: 401
+        '409':
+          description: Proof hash already submitted and settled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: REPLAY_PROOF
+                message: Proof hash already submitted and processed
+                status: 409
+        '422':
+          description: Cooldown or economic daily limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: COOLDOWN_ACTIVE
+                message: Per-wallet cooldown period of 600 seconds is active
+                status: 422
+        '429':
+          description: IP rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: RATE_LIMIT_EXCEEDED
+                message: IP rate limit of 30 requests per minute exceeded
+                status: 429
+  /api/v1/claims/{id}:
+    get:
+      summary: Poll status of a claim
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: clm_0123456789abcdef
+      responses:
+        '200':
+          description: Current claim status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimPollResponse'
+        '404':
+          description: Claim not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorBody'
+              example:
+                code: CLAIM_NOT_FOUND
+                message: Claim not found
+                status: 404
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service, version]
+      properties:
+        status: { type: string }
+        service: { type: string }
+        version: { type: string }
+    SelfCheckReport:
+      type: object
+      required: [rpc_healthy, oracle_authorized, contract_paused, oracle_funded, contract_id, oracle_address]
+      properties:
+        rpc_healthy: { type: boolean }
+        oracle_authorized: { type: boolean }
+        contract_paused: { type: boolean }
+        oracle_funded: { type: boolean }
+        contract_id: { type: string }
+        oracle_address: { type: string }
+    VersionResponse:
+      type: object
+      required: [service, version, mode]
+      properties:
+        service: { type: string }
+        version: { type: string }
+        mode: { type: string }
+    PublicConfigResponse:
+      type: object
+      required: [mode, network, bounty_stroops, oracle_daily_cap_stroops, wallet_daily_claim_limit, cooldown_seconds, challenge_ttl_seconds, simulator_mode, explorer_base_url]
+      properties:
+        mode: { type: string }
+        network: { type: string }
+        contract_id: { type: string, nullable: true }
+        token_id: { type: string, nullable: true }
+        bounty_stroops: { type: integer }
+        oracle_daily_cap_stroops: { type: integer }
+        wallet_daily_claim_limit: { type: integer }
+        cooldown_seconds: { type: integer }
+        challenge_ttl_seconds: { type: integer }
+        simulator_mode: { type: boolean }
+        explorer_base_url: { type: string }
+    ChallengeResponse:
+      type: object
+      required: [challenge_id, wallet_address, issued_at, expires_at]
+      properties:
+        challenge_id: { type: string }
+        wallet_address: { type: string }
+        issued_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    ProofV1:
+      type: object
+      required: [wallet_address, challenge_id, timestamp, nonce, proof_hash, detector_version, duration_seconds, simulated]
+      properties:
+        wallet_address: { type: string }
+        challenge_id: { type: string }
+        timestamp: { type: string, format: date-time }
+        nonce: { type: string }
+        proof_hash: { type: string }
+        detector_version: { type: string }
+        duration_seconds: { type: integer }
+        simulated: { type: boolean }
+    ProofConfirmedResponse:
+      type: object
+      required: [status, claim_id, tx_hash, explorer_url, amount_stroops, simulated]
+      properties:
+        status: { type: string, enum: [confirmed] }
+        claim_id: { type: string }
+        tx_hash: { type: string }
+        explorer_url: { type: string }
+        amount_stroops: { type: integer }
+        simulated: { type: boolean }
+    ProofPendingResponse:
+      type: object
+      required: [status, claim_id, poll_url]
+      properties:
+        status: { type: string, enum: [pending] }
+        claim_id: { type: string }
+        poll_url: { type: string }
+    ClaimPollResponse:
+      type: object
+      required: [claim_id, wallet_address, status, amount_stroops, simulated, created_at, updated_at]
+      properties:
+        claim_id: { type: string }
+        wallet_address: { type: string }
+        status: { type: string, enum: [reserved, submitted, confirmed, failed, expired] }
+        amount_stroops: { type: integer }
+        tx_hash: { type: string, nullable: true }
+        explorer_url: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        simulated: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ApiErrorBody:
+      type: object
+      required: [code, message, status]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        status: { type: integer }
+        details: { type: string, nullable: true }
