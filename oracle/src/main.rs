@@ -6,10 +6,10 @@
 //! ## Environment variables
 //! | Variable              | Required (live-network) | Description                        |
 //! |-----------------------|-------------------------|------------------------------------|
-//! | `ORACLE_SECRET_KEY`   | ✅                       | Ed25519 secret key (S...)          |
-//! | `CONTRACT_ID`         | ✅                       | Deployed NegaWattEscrow address    |
+//! | `ORACLE_SECRET_KEY`   | Yes                     | Ed25519 secret key (S...)          |
+//! | `CONTRACT_ID`         | Yes                     | Deployed NegaWattEscrow address    |
 //! | `HORIZON_URL`         | No (defaults testnet)   | Horizon REST API base URL          |
-//! | `TOKEN_CONTRACT_ID`   | ✅                       | USDC-T SAC contract ID             |
+//! | `TOKEN_CONTRACT_ID`   | Yes                     | USDC-T SAC contract ID             |
 //! | `PORT`                | No (defaults 8080)      | HTTP listen port                   |
 
 mod routes;
@@ -68,7 +68,7 @@ async fn main() {
                 .allow_headers(Any),
         );
 
-    info!("🚀 EchoGrid Oracle listening on http://{addr}");
+    info!("EchoGrid Oracle listening on http://{addr}");
     info!("   POST /api/v1/proof   — submit Proof-of-Power-Down");
     info!("   GET  /api/v1/health  — liveness check");
 
