@@ -14,6 +14,7 @@ jobs:
     outputs:
       rust: ${{ steps.changes.outputs.rust }}
       python: ${{ steps.changes.outputs.python }}
+      contract: ${{ steps.changes.outputs.contract }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,6 +24,9 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
+            contract:
+              - 'contracts/negawatt_escrow/**'
+              - '.github/workflows/**'
             rust:
               - 'oracle/**'
               - 'acoustic_cli/**'
@@ -94,3 +98,36 @@ jobs:
             echo "Python project not yet scaffolded (PR 1 baseline passed)."
             exit 0
           fi
+
+  contract:
+    name: Contract CI
+    needs: filter
+    if: ${{ needs.filter.outputs.contract == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "contracts/negawatt_escrow -> contracts/negawatt_escrow/target"
+
+      - name: Check Formatting
+        run: cargo fmt --manifest-path contracts/negawatt_escrow/Cargo.toml --check
+
+      - name: Run Clippy
+        run: cargo clippy --manifest-path contracts/negawatt_escrow/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run Unit Tests
+        run: cargo test --manifest-path contracts/negawatt_escrow/Cargo.toml
+
+      - name: Build WASM Target
+        run: cargo build --manifest-path contracts/negawatt_escrow/Cargo.toml --target wasm32-unknown-unknown --release
+
