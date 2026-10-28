@@ -294,6 +294,33 @@ impl NegaWattEscrow {
         Ok(())
     }
 
+    /// **Set Window Budget** — Update the pool-level payout budget per window.
+    ///
+    /// Municipality-only. Enforces invariant: per_payout_cap <= new_budget.
+    pub fn set_window_budget(env: Env, new_budget: i128) -> Result<(), Error> {
+        let _municipality = Self::require_municipality_role(&env)?;
+
+        if new_budget <= 0 {
+            return Err(Error::InvalidBudget);
+        }
+
+        let mut config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .ok_or(Error::NotInitialized)?;
+
+        // Enforce invariant: per_payout_cap <= new_budget
+        if config.per_payout_cap > new_budget {
+            return Err(Error::InvariantViolated);
+        }
+
+        config.window_budget = new_budget;
+        env.storage().instance().set(&DataKey::Config, &config);
+
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // ── Oracle Function (AgentGuard: ROLE_ORACLE / AgentPay) ────────────────
     // -----------------------------------------------------------------------
@@ -349,6 +376,25 @@ impl NegaWattEscrow {
             return Err(Error::ExceedsPayoutCap);
         }
 
+        // Fixed-window pool budget accounting
+        let window_len = config.window_len.max(1);
+        let current_window_id = env.ledger().timestamp() / window_len;
+        let (stored_window_id, stored_spend): (u64, i128) = env
+            .storage()
+            .instance()
+            .get(&DataKey::CurrentWindowSpend)
+            .unwrap_or((0, 0));
+
+        let current_window_spent = if stored_window_id == current_window_id {
+            stored_spend
+        } else {
+            0
+        };
+
+        if current_window_spent + bounty > config.window_budget {
+            return Err(Error::ExceedsWindowBudget);
+        }
+
         // Sanity-check: make sure the escrow still has enough funds.
         let balance = TokenClient::new(&env, &token_id).balance(&env.current_contract_address());
         if balance < bounty {
@@ -360,6 +406,12 @@ impl NegaWattEscrow {
             &env.current_contract_address(), // from: escrow
             &recipient,                      // to: verified user
             &bounty,
+        );
+
+        // Update pool window spend
+        env.storage().instance().set(
+            &DataKey::CurrentWindowSpend,
+            &(current_window_id, current_window_spent + bounty),
         );
 
         // Mark this proof as spent so it can never be replayed.
@@ -488,7 +540,11 @@ impl NegaWattEscrow {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, Address, BytesN, Env};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        token::StellarAssetClient,
+        Address, BytesN, Env,
+    };
 
     /// Helper: deploy a fresh contract and a mock USDC token, returning
     /// handles for all three parties (municipality, oracle, user).
@@ -804,5 +860,73 @@ mod test {
             client.try_set_bounty(&1_001_i128).unwrap_err(),
             Ok(Error::InvariantViolated)
         );
+    }
+
+    #[test]
+    fn test_set_window_budget_success_and_invariants() {
+        let (_, _, client, _, _, _) = setup();
+        // Cap is 20_000_000
+        client.set_window_budget(&500_000_000_i128);
+        assert_eq!(client.get_config().window_budget, 500_000_000_i128);
+
+        // Budget <= 0 fails
+        assert_eq!(
+            client.try_set_window_budget(&0_i128).unwrap_err(),
+            Ok(Error::InvalidBudget)
+        );
+
+        // Invariant: budget < cap fails
+        assert_eq!(
+            client.try_set_window_budget(&19_999_999_i128).unwrap_err(),
+            Ok(Error::InvariantViolated)
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_window_budget_auth_failure() {
+        let (env, _, client, _, _, _) = setup();
+        env.mock_auths(&[]);
+        client.set_window_budget(&500_000_000_i128);
+    }
+
+    #[test]
+    fn test_window_budget_exhaustion_boundary_and_rollover() {
+        let (env, _, client, _, _, user) = setup();
+        // Deposit plenty of funds
+        client.deposit(&10_000_i128);
+
+        // Lower cap and budget for testing: cap = 100, budget = 200 (exact 2 claims)
+        client.set_payout_cap(&100_i128);
+        client.set_window_budget(&200_i128);
+
+        let proof1 = BytesN::from_array(&env, &[11u8; 32]);
+        let proof2 = BytesN::from_array(&env, &[12u8; 32]);
+        let proof3 = BytesN::from_array(&env, &[13u8; 32]);
+
+        // First payout: 100 stroops
+        client.payout(&user, &proof1);
+        assert_eq!(client.window_spent(), 100_i128);
+
+        // Second payout: 100 stroops -> exact boundary (200 / 200)
+        client.payout(&user, &proof2);
+        assert_eq!(client.window_spent(), 200_i128);
+
+        // Third payout in same window: exceeds budget
+        assert_eq!(
+            client.try_payout(&user, &proof3).unwrap_err(),
+            Ok(Error::ExceedsWindowBudget)
+        );
+
+        // Advance ledger timestamp to next window (+86_400 seconds)
+        let current_ts = env.ledger().timestamp();
+        env.ledger().set_timestamp(current_ts + 86_400);
+
+        // Window rollover: window_spent resets to 0, unused budget does not roll over
+        assert_eq!(client.window_spent(), 0_i128);
+
+        // Third payout now succeeds in the new window!
+        client.payout(&user, &proof3);
+        assert_eq!(client.window_spent(), 100_i128);
     }
 }
