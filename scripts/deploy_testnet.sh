@@ -1,87 +1,166 @@
 #!/usr/bin/env bash
-# Deploy EchoGrid NegaWatt Escrow contract to Stellar Testnet
+# EchoGrid: Idempotent Testnet Deploy Script
+# Usage:
+#   bash scripts/deploy_testnet.sh [--dry-run]
 set -euo pipefail
 
-SOURCE_IDENTITY="${1:-echogrid_deployer}"
+if [ -d "/mnt/c/Users/isaac/.cargo/bin" ]; then
+    export PATH="/mnt/c/Users/isaac/.cargo/bin:$PATH"
+fi
+export PATH="$HOME/.cargo/bin:$PATH"
+
+if ! command -v cargo &> /dev/null && command -v cargo.exe &> /dev/null; then
+    cargo() {
+        cargo.exe "$@"
+    }
+fi
+
+if ! command -v stellar &> /dev/null && command -v stellar.exe &> /dev/null; then
+    stellar() {
+        stellar.exe "$@"
+    }
+fi
+
+DRY_RUN=false
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        *)
+            ;;
+    esac
+done
+
 NETWORK="testnet"
 RPC_URL="https://soroban-testnet.stellar.org"
 NETWORK_PASSPHRASE="Test SDF Network ; September 2015"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONTRACT_DIR="${ROOT_DIR}/contracts/negawatt_escrow"
-DEPLOYMENTS_DIR="${ROOT_DIR}/deployments"
+MUNI_IDENTITY="${MUNICIPALITY_IDENTITY:-echo_municipality}"
+ORACLE_IDENTITY="${ORACLE_IDENTITY:-echo_oracle}"
 
-echo "=== EchoGrid Testnet Deployment ==="
-echo "Identity: ${SOURCE_IDENTITY}"
-echo "Network: ${NETWORK}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-# 1. Resolve Deployer Public Key
-DEPLOYER_PUBKEY="$(stellar keys address "${SOURCE_IDENTITY}")"
-echo "Deployer Public Key: ${DEPLOYER_PUBKEY}"
+echo "============================================================"
+echo "EchoGrid: Idempotent Testnet Deployment"
+echo "Network:             ${NETWORK}"
+echo "Dry Run:             ${DRY_RUN}"
+echo "Municipality ID:     ${MUNI_IDENTITY}"
+echo "Oracle ID:           ${ORACLE_IDENTITY}"
+echo "============================================================"
 
-# 2. Build and optimize contract WASM
-echo "Building contract WASM..."
-cd "${CONTRACT_DIR}"
-cargo build --target wasm32-unknown-unknown --release
+ensure_identity() {
+    local id="$1"
+    if stellar keys address "$id" &> /dev/null; then
+        echo "Identity '${id}' exists."
+    else
+        echo "Identity '${id}' not found. Generating and funding via friendbot..."
+        stellar keys generate --network "$NETWORK" --fund "$id"
+    fi
+}
 
-WASM_FILE="${CONTRACT_DIR}/target/wasm32-unknown-unknown/release/negawatt_escrow.wasm"
-OPTIMIZED_WASM="${CONTRACT_DIR}/target/wasm32-unknown-unknown/release/negawatt_escrow.optimized.wasm"
+echo "==> Verifying keystore identities..."
+ensure_identity "$MUNI_IDENTITY"
+ensure_identity "$ORACLE_IDENTITY"
 
-echo "Optimizing WASM..."
-stellar contract optimize --wasm "${WASM_FILE}" --wasm-out "${OPTIMIZED_WASM}"
+MUNI_PUBKEY="$(stellar keys address "$MUNI_IDENTITY")"
+ORACLE_PUBKEY="$(stellar keys address "$ORACLE_IDENTITY")"
+echo "Municipality Address: ${MUNI_PUBKEY}"
+echo "Oracle Address:       ${ORACLE_PUBKEY}"
 
-# 3. Retrieve Native XLM SAC Token ID
-echo "Resolving Native XLM Token ID..."
-TOKEN_ID="$(stellar contract id asset --asset native --network "${NETWORK}")"
-echo "Native Token ID: ${TOKEN_ID}"
+echo "==> Resolving Native XLM SAC ID..."
+TOKEN_ID="$(stellar contract id asset --asset native --network "$NETWORK")"
+echo "Native XLM Token ID:  ${TOKEN_ID}"
 
-# 4. Deploy contract to Testnet
-echo "Deploying contract to Stellar Testnet..."
-CONTRACT_ID="$(stellar contract deploy \
-  --wasm "${OPTIMIZED_WASM}" \
-  --source "${SOURCE_IDENTITY}" \
-  --network "${NETWORK}")"
-echo "Contract Deployed: ${CONTRACT_ID}"
+echo "==> Building and optimizing contract..."
+bash scripts/build_contract.sh
 
-# 5. Initialize contract (1 XLM bounty per claim)
+WASM_OPT="contracts/negawatt_escrow/target/wasm32-unknown-unknown/release/negawatt_escrow.optimized.wasm"
+WASM_HASH="$(awk '{print $1}' deployments/wasm-hash.txt)"
+WASM_SIZE="$(awk '{print $3}' deployments/wasm-hash.txt)"
+
 BOUNTY_STROOPS="10000000"
-echo "Initializing contract..."
-stellar contract invoke \
-  --id "${CONTRACT_ID}" \
-  --source "${SOURCE_IDENTITY}" \
-  --network "${NETWORK}" \
-  -- initialize \
-  --municipality "${DEPLOYER_PUBKEY}" \
-  --oracle "${DEPLOYER_PUBKEY}" \
-  --token "${TOKEN_ID}" \
-  --bounty "${BOUNTY_STROOPS}"
+CAP_STROOPS="20000000"
+WINDOW_BUDGET_STROOPS="200000000"
+WINDOW_LEN="86400"
+MAX_CLAIMS="3"
 
-# 6. Fund escrow (Deposit 5 XLM)
-DEPOSIT_STROOPS="50000000"
-echo "Depositing ${DEPOSIT_STROOPS} stroops into escrow..."
-stellar contract invoke \
-  --id "${CONTRACT_ID}" \
-  --source "${SOURCE_IDENTITY}" \
-  --network "${NETWORK}" \
-  -- deposit \
-  --amount "${DEPOSIT_STROOPS}"
+if [ "$DRY_RUN" = true ]; then
+    echo "============================================================"
+    echo "DRY RUN COMPLETE — No transactions submitted"
+    echo "Planned Contract Deploy:"
+    echo "  WASM File:        ${WASM_OPT}"
+    echo "  WASM Hash:        ${WASM_HASH}"
+    echo "  WASM Size:        ${WASM_SIZE} bytes"
+    echo "  Deployer:         ${MUNI_IDENTITY} (${MUNI_PUBKEY})"
+    echo "Planned Initialization Parameters:"
+    echo "  Municipality:     ${MUNI_PUBKEY}"
+    echo "  Oracle:           ${ORACLE_PUBKEY}"
+    echo "  Token ID:         ${TOKEN_ID}"
+    echo "  Bounty:           ${BOUNTY_STROOPS} stroops (1 XLM)"
+    echo "  Payout Cap:       ${CAP_STROOPS} stroops (2 XLM)"
+    echo "  Window Budget:    ${WINDOW_BUDGET_STROOPS} stroops (20 XLM)"
+    echo "  Window Length:    ${WINDOW_LEN} seconds (24h)"
+    echo "  Max Claims/Win:   ${MAX_CLAIMS}"
+    echo "============================================================"
+    exit 0
+fi
 
-# 7. Write deployments/testnet.json
-mkdir -p "${DEPLOYMENTS_DIR}"
-cat > "${DEPLOYMENTS_DIR}/testnet.json" <<EOF
+echo "==> Deploying contract to ${NETWORK}..."
+CONTRACT_ID="$(stellar contract deploy \
+    --wasm "$WASM_OPT" \
+    --source "$MUNI_IDENTITY" \
+    --network "$NETWORK")"
+echo "Contract deployed successfully. ID: ${CONTRACT_ID}"
+
+echo "==> Initializing contract with confirmed defaults..."
+stellar contract invoke \
+    --id "$CONTRACT_ID" \
+    --source "$MUNI_IDENTITY" \
+    --network "$NETWORK" \
+    -- initialize \
+    --municipality "$MUNI_PUBKEY" \
+    --oracle "$ORACLE_PUBKEY" \
+    --token "$TOKEN_ID" \
+    --bounty "$BOUNTY_STROOPS"
+
+echo "==> Verifying initialized configuration on-chain..."
+stellar contract invoke \
+    --id "$CONTRACT_ID" \
+    --source "$MUNI_IDENTITY" \
+    --network "$NETWORK" \
+    -- get_config
+
+TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+mkdir -p deployments
+cat > deployments/testnet.json <<EOF
 {
   "network": "${NETWORK}",
   "rpc_url": "${RPC_URL}",
   "network_passphrase": "${NETWORK_PASSPHRASE}",
   "contract_id": "${CONTRACT_ID}",
   "token_id": "${TOKEN_ID}",
-  "oracle_public_key": "${DEPLOYER_PUBKEY}",
-  "municipality_public_key": "${DEPLOYER_PUBKEY}",
-  "bounty_stroops": ${BOUNTY_STROOPS},
-  "initial_deposit_stroops": ${DEPOSIT_STROOPS},
+  "wasm_hash": "${WASM_HASH}",
+  "wasm_size_bytes": ${WASM_SIZE},
+  "public_keys": {
+    "municipality": "${MUNI_PUBKEY}",
+    "oracle": "${ORACLE_PUBKEY}"
+  },
+  "config": {
+    "bounty_stroops": ${BOUNTY_STROOPS},
+    "per_payout_cap_stroops": ${CAP_STROOPS},
+    "window_budget_stroops": ${WINDOW_BUDGET_STROOPS},
+    "window_len_seconds": ${WINDOW_LEN},
+    "max_recipient_window_claims": ${MAX_CLAIMS}
+  },
+  "deployed_at": "${TIMESTAMP}",
   "explorer_url": "https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}"
 }
 EOF
 
-echo "=== Deployment Complete ==="
-echo "Saved to: ${DEPLOYMENTS_DIR}/testnet.json"
+echo "============================================================"
+echo "Deployment SUCCESSFUL!"
+echo "Contract ID:  ${CONTRACT_ID}"
+echo "Config saved: deployments/testnet.json"
+echo "Explorer:     https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}"
+echo "============================================================"

@@ -1,7 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ -d "/mnt/c/Users/isaac/.cargo/bin" ]; then
+    export PATH="/mnt/c/Users/isaac/.cargo/bin:$PATH"
+fi
 export PATH="$HOME/.cargo/bin:$PATH"
+
+if ! command -v cargo &> /dev/null && command -v cargo.exe &> /dev/null; then
+    cargo() {
+        cargo.exe "$@"
+    }
+fi
+
+if ! command -v stellar &> /dev/null && command -v stellar.exe &> /dev/null; then
+    stellar() {
+        stellar.exe "$@"
+    }
+fi
 
 # Size ceiling budget in bytes (documented ceiling: 65,536 bytes / 64 KB)
 MAX_SIZE_BYTES=65536
