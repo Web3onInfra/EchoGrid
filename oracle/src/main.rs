@@ -45,6 +45,8 @@ pub struct AppState {
     pub clock: Arc<dyn Clock>,
     pub queue: Option<Arc<SubmissionQueue>>,
     pub rate_limiter: Arc<rate_limit::RateLimiter>,
+    pub readiness_report:
+        Arc<tokio::sync::RwLock<Option<crate::chain::self_check::SelfCheckReport>>>,
 }
 
 impl Default for AppState {
@@ -59,6 +61,7 @@ impl Default for AppState {
             clock: clock.clone(),
             queue: None,
             rate_limiter: Arc::new(rate_limit::RateLimiter::new(clock)),
+            readiness_report: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 }
@@ -135,8 +138,12 @@ pub fn build_app(state: AppState) -> Router {
     let cors_layer = build_cors_layer(&state.config.allowed_origins);
 
     Router::new()
-        // Health probe
+        // Operational & health probes
         .route("/api/v1/health", get(routes::health))
+        .route("/api/v1/ready", get(routes::ready))
+        .route("/api/v1/version", get(routes::version))
+        .route("/api/v1/config", get(routes::public_config))
+        .route("/api/v1/claims/:id", get(routes::get_claim))
         // Challenge issuance
         .route("/api/v1/challenge", get(challenge::get_challenge))
         // The AgentPay endpoint
@@ -213,12 +220,14 @@ async fn main() {
     };
 
     let rate_limiter = Arc::new(rate_limit::RateLimiter::new(clock.clone()));
+    let readiness_report = Arc::new(tokio::sync::RwLock::new(None));
     let state = AppState {
         config: Arc::new(config),
         store,
         clock,
         queue,
         rate_limiter,
+        readiness_report,
     };
 
     let app = build_app(state);
@@ -255,6 +264,7 @@ mod tests {
             clock,
             queue: None,
             rate_limiter,
+            readiness_report: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -272,6 +282,7 @@ mod tests {
             clock,
             queue: None,
             rate_limiter,
+            readiness_report: Arc::new(tokio::sync::RwLock::new(None)),
         };
         let app = build_app(state);
 
@@ -314,6 +325,7 @@ mod tests {
             clock,
             queue: None,
             rate_limiter,
+            readiness_report: Arc::new(tokio::sync::RwLock::new(None)),
         };
         let app = build_app(state);
 
