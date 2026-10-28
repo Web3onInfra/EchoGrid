@@ -136,6 +136,7 @@ pub async fn submit_proof(
         })?;
 
     // ── Step 5: Limit reservation inside store transaction ─────────────────────
+    let is_simulated = payload.simulated || state.config.simulator_mode;
     let claim_id = format!("clm_{}_{}", now.timestamp(), &payload.nonce[..8]);
     let bounty = state.config.bounty_stroops;
     let limits = LimitConfig {
@@ -153,7 +154,7 @@ pub async fn submit_proof(
         status: PayoutStatus::Reserved,
         tx_hash: None,
         error: None,
-        simulated: false,
+        simulated: is_simulated,
         created_at: now,
         updated_at: now,
     };
@@ -164,12 +165,49 @@ pub async fn submit_proof(
         .await
         .map_err(ApiError::from)?;
 
-    // ── Step 6: Chain submission & confirmation wait ───────────────────────────
+    // ── Step 6: Chain submission or simulator bypass ───────────────────────────
     let explorer_network = if state.config.network_passphrase.contains("Test") {
         "testnet"
     } else {
         "public"
     };
+
+    if is_simulated {
+        let sim_tx = format!("SIM_TX_{}", &payload.proof_hash[..16]);
+        let _ = transition_claim(
+            state.store.as_ref(),
+            &claim_id,
+            PayoutStatus::Submitted,
+            Some(sim_tx.clone()),
+            None,
+            now,
+        )
+        .await;
+        let _ = transition_claim(
+            state.store.as_ref(),
+            &claim_id,
+            PayoutStatus::Confirmed,
+            Some(sim_tx.clone()),
+            None,
+            now,
+        )
+        .await;
+
+        let explorer_url =
+            format!("https://stellar.expert/explorer/{explorer_network}/tx/{sim_tx}");
+
+        return Ok((
+            StatusCode::OK,
+            Json(ProofResponse::Confirmed {
+                claim_id,
+                tx_hash: sim_tx,
+                explorer_url,
+                amount_stroops: bounty,
+                simulated: true,
+            }),
+        )
+            .into_response());
+    }
 
     if let Some(queue) = &state.queue {
         let _ = transition_claim(
@@ -332,6 +370,7 @@ mod tests {
             proof_hash,
             detector_version: "echonet-1.2".to_string(),
             duration_seconds: 15,
+            simulated: false,
         }
     }
 
@@ -438,5 +477,99 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(replay_err.status_code(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_submit_proof_simulator_mode_bypasses_chain() {
+        let now = DateTime::parse_from_rfc3339(TS)
+            .unwrap()
+            .with_timezone(&Utc);
+        let state = setup_state(now).await;
+
+        let ch = Challenge {
+            id: CH_ID.to_string(),
+            wallet_address: WALLET.to_string(),
+            issued_at: now,
+            expires_at: now + Duration::seconds(120),
+            used: false,
+        };
+        state.store.save_challenge(ch).await.unwrap();
+
+        let mut proof = make_proof(WALLET, CH_ID, TS, NONCE);
+        proof.simulated = true;
+
+        let res = submit_proof(State(state.clone()), Json(proof.clone()))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let claim = state
+            .store
+            .get_claim_by_proof_hash(&proof.proof_hash)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(claim.simulated);
+        assert_eq!(claim.status, PayoutStatus::Confirmed);
+        assert!(claim.tx_hash.unwrap().starts_with("SIM_TX_"));
+
+        // Simulated claims do not deplete the on-chain daily payout cap
+        let chain_spent = state
+            .store
+            .get_daily_spent_and_reserved(now - Duration::hours(1))
+            .await
+            .unwrap();
+        assert_eq!(chain_spent, 0);
+    }
+
+    #[tokio::test]
+    async fn test_simulated_claim_never_reaches_pipeline() {
+        use crate::chain::pipeline::SubmitPipeline;
+        use crate::chain::queue::SubmissionQueue;
+        use crate::chain::rpc::SorobanRpcClient;
+        use ed25519_dalek::SigningKey;
+        use wiremock::MockServer;
+
+        let server = MockServer::start().await; // Zero endpoints mounted
+        let rpc = SorobanRpcClient::new(&server.uri(), std::time::Duration::from_millis(500));
+        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        let pipeline = Arc::new(SubmitPipeline::new(
+            rpc.clone(),
+            signing_key,
+            "C_CONTRACT_123".into(),
+            "Test SDF Network ; September 2015".into(),
+            std::time::Duration::from_millis(500),
+        ));
+        let queue = Arc::new(SubmissionQueue::new(
+            pipeline,
+            rpc,
+            "G_ORACLE".into(),
+            Some(100),
+        ));
+
+        let now = DateTime::parse_from_rfc3339(TS)
+            .unwrap()
+            .with_timezone(&Utc);
+        let mut state = setup_state(now).await;
+        state.queue = Some(queue);
+
+        let ch = Challenge {
+            id: CH_ID.to_string(),
+            wallet_address: WALLET.to_string(),
+            issued_at: now,
+            expires_at: now + Duration::seconds(120),
+            used: false,
+        };
+        state.store.save_challenge(ch).await.unwrap();
+
+        let mut proof = make_proof(WALLET, CH_ID, TS, NONCE);
+        proof.simulated = true;
+
+        let res = submit_proof(State(state), Json(proof)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // Verify zero requests ever reached Soroban RPC pipeline
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 0);
     }
 }
