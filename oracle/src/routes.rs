@@ -31,13 +31,13 @@ pub async fn submit_proof(
     info!(
         wallet    = %payload.wallet_address,
         challenge = %payload.challenge_id,
-        "📥 Received Proof-of-Power-Down"
+        "Received Proof-of-Power-Down"
     );
 
     // ── Step 1: Cryptographic verification ───────────────────────────────────
     let verification = verify_proof(&payload);
     if !verification.valid {
-        warn!(reason = %verification.reason, "❌ Proof verification failed");
+        warn!(reason = %verification.reason, "Proof verification failed");
         return (
             StatusCode::BAD_REQUEST,
             Json(OracleResponse::err(format!(
@@ -89,7 +89,7 @@ pub async fn submit_proof(
             info!(
                 tx = %tx_hash,
                 wallet = %payload.wallet_address,
-                "✅ NegaWatt payout triggered — USDC transferred to user"
+                "NegaWatt payout triggered — USDC transferred to user"
             );
             (
                 StatusCode::OK,
@@ -100,7 +100,7 @@ pub async fn submit_proof(
             )
         }
         Err(e) => {
-            error!(err = %e, "🔴 Stellar transaction failed");
+            error!(err = %e, "Stellar transaction failed");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(OracleResponse::err(format!("Payout failed: {e}"))),

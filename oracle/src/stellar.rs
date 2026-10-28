@@ -74,7 +74,7 @@ mod mock {
             wallet    = %payload.wallet_address,
             challenge = %payload.challenge_id,
             tx        = %fake_tx,
-            "🟢 [MOCK] NegaWatt payout simulated — Soroban invocation would fire here"
+            "[MOCK] NegaWatt payout simulated — Soroban invocation would fire here"
         );
 
         Ok(fake_tx)

@@ -9,15 +9,15 @@
 //! ```
 //! acoustic_cli --wallet G... --challenge-id ch_001
 //!
-//! [EchoGrid] 🎙  Initialising acoustic classifier...
-//! [EchoGrid] 📡  Listening to ambient noise...
-//! [EchoGrid] ⚡  AC Hum DETECTED  (72 Hz ±4, confidence 94%)
-//! [EchoGrid] 📣  Challenge received — please turn off your appliance!
-//! [EchoGrid] 👂  Monitoring for power-down event...
-//! [EchoGrid] 🔇  AC Hum ABSENT  — power-down confirmed!
-//! [EchoGrid] 🔐  Generating Proof-of-Power-Down...
-//! [EchoGrid] 📤  Sending proof to EchoGrid Oracle...
-//! [EchoGrid] ✅  NegaWatt bounty received!  TX: MOCK_TX_...
+//! [EchoGrid] Initialising acoustic classifier...
+//! [EchoGrid] Listening to ambient noise...
+//! [EchoGrid] AC Hum DETECTED  (72 Hz ±4, confidence 94%)
+//! [EchoGrid] Challenge received — please turn off your appliance!
+//! [EchoGrid] Monitoring for power-down event...
+//! [EchoGrid] AC Hum ABSENT  — power-down confirmed!
+//! [EchoGrid] Generating Proof-of-Power-Down...
+//! [EchoGrid] Sending proof to EchoGrid Oracle...
+//! [EchoGrid] NegaWatt bounty received!  TX: MOCK_TX_...
 //! ```
 
 use clap::Parser;
@@ -92,7 +92,7 @@ fn main() {
     if !args.wallet.starts_with('G') || args.wallet.len() != 56 {
         eprintln!(
             "{} Wallet address must start with 'G' and be 56 characters long.",
-            "[EchoGrid] ❌".red().bold()
+            "[EchoGrid] [ERROR]".red().bold()
         );
         std::process::exit(1);
     }
@@ -104,7 +104,7 @@ fn main() {
     };
 
     // ── Phase 1: Classifier Boot ─────────────────────────────────────────────
-    log_step("🎙 ", "Initialising acoustic classifier...", "cyan");
+    log_step("Initialising acoustic classifier...", "cyan");
     pause(800);
     println!(
         "    {}  Model: EchoNet-Lite v1.2 | Classes: [AC_HUM, FAN, PUMP, AMBIENT]",
@@ -113,7 +113,7 @@ fn main() {
     pause(600);
 
     // ── Phase 2: Ambient Listening ────────────────────────────────────────────
-    log_step("📡 ", "Listening to ambient noise...", "cyan");
+    log_step("Listening to ambient noise...", "cyan");
     pause(1200);
 
     // Simulate background frequency readings.
@@ -124,11 +124,7 @@ fn main() {
     }
 
     // ── Phase 3: AC Hum Detected ──────────────────────────────────────────────
-    log_step(
-        "⚡ ",
-        "AC Hum DETECTED  (72 Hz ±4, confidence: 94%)",
-        "yellow",
-    );
+    log_step("AC Hum DETECTED  (72 Hz ±4, confidence: 94%)", "yellow");
     pause(600);
     println!(
         "    {}  Appliance class: AIR_CONDITIONER | State: ON",
@@ -138,7 +134,6 @@ fn main() {
     // ── Phase 4: Challenge Received ───────────────────────────────────────────
     pause(800);
     log_step(
-        "📣 ",
         &format!(
             "Challenge received [{}] — please turn off your appliance!",
             args.challenge_id.bold()
@@ -148,7 +143,7 @@ fn main() {
     pause(1000);
 
     // ── Phase 5: Monitor for Power-Down ──────────────────────────────────────
-    log_step("👂 ", "Monitoring for power-down event...", "cyan");
+    log_step("Monitoring for power-down event...", "cyan");
     let countdown_freqs = [71.8, 69.2, 55.1, 38.4, 12.2, 3.1, 0.4];
     for f in &countdown_freqs {
         pause(400);
@@ -166,15 +161,11 @@ fn main() {
 
     // ── Phase 6: Power-Down Confirmed ────────────────────────────────────────
     pause(500);
-    log_step(
-        "🔇 ",
-        "AC Hum ABSENT — power-down event CONFIRMED!",
-        "green",
-    );
+    log_step("AC Hum ABSENT — power-down event CONFIRMED!", "green");
     pause(700);
 
     // ── Phase 7: Generate Proof-of-Power-Down ────────────────────────────────
-    log_step("🔐 ", "Generating Proof-of-Power-Down...", "cyan");
+    log_step("Generating Proof-of-Power-Down...", "cyan");
     pause(400);
 
     // Timestamp: use current UTC seconds as a simple ISO string mock.
@@ -207,7 +198,6 @@ fn main() {
     // ── Phase 8: Submit to Oracle ─────────────────────────────────────────────
     let oracle_endpoint = format!("{}/api/v1/proof", args.oracle_url.trim_end_matches('/'));
     log_step(
-        "📤 ",
         &format!("Sending proof to EchoGrid Oracle at {}...", oracle_endpoint),
         "cyan",
     );
@@ -234,21 +224,16 @@ fn main() {
                 Ok(oracle_resp) if oracle_resp.success => {
                     pause(300);
                     log_step(
-                        "✅ ",
                         &format!("NegaWatt bounty received!  {}", oracle_resp.message),
                         "green",
                     );
                     if let Some(tx) = oracle_resp.tx_hash {
                         println!("    {}  Stellar TX:  {}", "│".dimmed(), tx.bright_cyan());
                     }
-                    println!(
-                        "\n    {} You just helped balance Ghana's power grid! 🌍\n",
-                        "🎉".green()
-                    );
+                    println!("\n    You just helped balance Ghana's power grid!\n");
                 }
                 Ok(oracle_resp) => {
                     log_step(
-                        "❌ ",
                         &format!("Oracle rejected proof: {}", oracle_resp.message),
                         "red",
                     );
@@ -257,7 +242,7 @@ fn main() {
                 Err(e) => {
                     eprintln!(
                         "{} Failed to parse oracle response (HTTP {}): {e}",
-                        "[EchoGrid] ❌".red().bold(),
+                        "[EchoGrid] [ERROR]".red().bold(),
                         status
                     );
                     std::process::exit(1);
@@ -269,7 +254,7 @@ fn main() {
             // Provide a helpful message so judges know what to do.
             eprintln!(
                 "{} Could not reach oracle at {oracle_endpoint}: {e}",
-                "[EchoGrid] ❌".red().bold()
+                "[EchoGrid] [ERROR]".red().bold()
             );
             eprintln!(
                 "    Tip: start the oracle first with  {}",
@@ -291,8 +276,8 @@ fn main() {
 // ---------------------------------------------------------------------------
 
 /// Print a coloured step log line.
-fn log_step(icon: &str, msg: &str, color: &str) {
-    let prefix = format!("[EchoGrid] {icon}").bold();
+fn log_step(msg: &str, color: &str) {
+    let prefix = "[EchoGrid]".bold();
     let line = match color {
         "cyan" => format!("{prefix} {}", msg.cyan()),
         "yellow" => format!("{prefix} {}", msg.yellow()),
