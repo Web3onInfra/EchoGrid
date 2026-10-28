@@ -7,6 +7,7 @@ pub mod chain;
 pub mod challenge;
 pub mod config;
 pub mod error;
+pub mod proof;
 mod routes;
 pub mod state;
 mod stellar;
