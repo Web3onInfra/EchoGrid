@@ -7,6 +7,7 @@ pub mod chain;
 pub mod config;
 pub mod error;
 mod routes;
+pub mod state;
 mod stellar;
 mod types;
 
