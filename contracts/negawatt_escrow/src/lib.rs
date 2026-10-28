@@ -20,9 +20,34 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, token::Client as TokenClient, Address, BytesN, Env,
-    Symbol,
+    contract, contracterror, contractimpl, contracttype, token::Client as TokenClient, Address,
+    BytesN, Env, Symbol,
 };
+
+// ---------------------------------------------------------------------------
+// ── Error Enum ─────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+
+/// Typed errors with stable numeric codes for auditability and client handling.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    Unauthorized = 3,
+    InvalidAmount = 4,
+    InvalidBounty = 5,
+    InvalidCap = 6,
+    InvalidBudget = 7,
+    InvariantViolated = 8,
+    InsufficientBalance = 9,
+    ReplayClaim = 10,
+    ExceedsPayoutCap = 11,
+    ExceedsWindowBudget = 12,
+    ExceedsRecipientWindowLimit = 13,
+    ContractPaused = 14,
+}
 
 // ---------------------------------------------------------------------------
 // ── Storage Key Enum ────────────────────────────────────────────────────────
@@ -87,7 +112,7 @@ impl NegaWattEscrow {
         oracle: Address,
         token: Address,
         bounty: i128,
-    ) {
+    ) -> Result<(), Error> {
         // Guard: prevent re-initialisation which could overwrite the oracle address.
         if env
             .storage()
@@ -95,7 +120,11 @@ impl NegaWattEscrow {
             .get::<_, bool>(&DataKey::Initialized)
             .unwrap_or(false)
         {
-            panic!("EchoGrid: contract already initialized");
+            return Err(Error::AlreadyInitialized);
+        }
+
+        if bounty <= 0 {
+            return Err(Error::InvalidBounty);
         }
 
         // The municipality must sign this transaction, anchoring ownership.
@@ -113,6 +142,8 @@ impl NegaWattEscrow {
             .instance()
             .set(&DataKey::BountyPerClaim, &bounty);
         env.storage().instance().set(&DataKey::Initialized, &true);
+
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -126,20 +157,20 @@ impl NegaWattEscrow {
     ///
     /// # Arguments
     /// * `amount` — How many stroops of the token to deposit.
-    pub fn deposit(env: Env, amount: i128) {
+    pub fn deposit(env: Env, amount: i128) -> Result<(), Error> {
         // ── AgentGuard: ROLE_MUNICIPALITY ───────────────────────────────────
-        let municipality = Self::require_municipality_role(&env);
+        let municipality = Self::require_municipality_role(&env)?;
 
         // Validate deposit amount — negative deposits would drain the contract.
         if amount <= 0 {
-            panic!("EchoGrid: deposit amount must be positive");
+            return Err(Error::InvalidAmount);
         }
 
         let token_id: Address = env
             .storage()
             .instance()
             .get(&DataKey::TokenId)
-            .expect("EchoGrid: contract not initialized");
+            .ok_or(Error::NotInitialized)?;
 
         // Transfer USDC from the municipality wallet into *this* contract.
         // The SDK handles the SAC (Stellar Asset Contract) cross-call here.
@@ -152,18 +183,20 @@ impl NegaWattEscrow {
         // Emit an indexed event so dashboards can track deposits in real time.
         env.events()
             .publish((Symbol::new(&env, EVENT_DEPOSITED), municipality), amount);
+
+        Ok(())
     }
 
     /// **Set Bounty** — Update the per-claim NegaWatt payout rate.
     ///
     /// Allows the municipality to react to grid conditions — higher bounties
     /// during peak demand, lower during off-peak.
-    pub fn set_bounty(env: Env, new_bounty: i128) {
+    pub fn set_bounty(env: Env, new_bounty: i128) -> Result<(), Error> {
         // ── AgentGuard: ROLE_MUNICIPALITY ───────────────────────────────────
-        let municipality = Self::require_municipality_role(&env);
+        let municipality = Self::require_municipality_role(&env)?;
 
         if new_bounty <= 0 {
-            panic!("EchoGrid: bounty must be positive");
+            return Err(Error::InvalidBounty);
         }
 
         env.storage()
@@ -174,6 +207,8 @@ impl NegaWattEscrow {
             (Symbol::new(&env, EVENT_BOUNTY_SET), municipality),
             new_bounty,
         );
+
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -190,9 +225,9 @@ impl NegaWattEscrow {
     /// * `recipient`  — Stellar address of the user who earned the bounty.
     /// * `proof_hash` — The 32-byte SHA-256 hash that constitutes the
     ///   Proof-of-Power-Down.  Stored after use to prevent replay attacks.
-    pub fn payout(env: Env, recipient: Address, proof_hash: BytesN<32>) {
+    pub fn payout(env: Env, recipient: Address, proof_hash: BytesN<32>) -> Result<(), Error> {
         // ── AgentGuard: ROLE_ORACLE ─────────────────────────────────────────
-        let oracle = Self::require_oracle_role(&env);
+        let oracle = Self::require_oracle_role(&env)?;
 
         // ── Replay-attack prevention ────────────────────────────────────────
         // Each proof_hash must be unique (it embeds timestamp + wallet + nonce).
@@ -204,26 +239,26 @@ impl NegaWattEscrow {
             .get::<_, bool>(&claim_key)
             .unwrap_or(false)
         {
-            panic!("EchoGrid: proof already claimed — replay attack blocked");
+            return Err(Error::ReplayClaim);
         }
 
         let token_id: Address = env
             .storage()
             .instance()
             .get(&DataKey::TokenId)
-            .expect("EchoGrid: contract not initialized");
+            .ok_or(Error::NotInitialized)?;
 
         // NegaWatt payout triggered here ─────────────────────────────────────
         let bounty: i128 = env
             .storage()
             .instance()
             .get(&DataKey::BountyPerClaim)
-            .expect("EchoGrid: bounty not set");
+            .ok_or(Error::NotInitialized)?;
 
         // Sanity-check: make sure the escrow still has enough funds.
         let balance = TokenClient::new(&env, &token_id).balance(&env.current_contract_address());
         if balance < bounty {
-            panic!("EchoGrid: insufficient escrow balance — municipality must top up");
+            return Err(Error::InsufficientBalance);
         }
 
         // Transfer the NegaWatt bounty from escrow → user wallet.
@@ -248,6 +283,8 @@ impl NegaWattEscrow {
             (Symbol::new(&env, EVENT_PAYOUT), oracle, recipient.clone()),
             bounty,
         );
+
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -287,28 +324,28 @@ impl NegaWattEscrow {
     /// Retrieves the `MunicipalityAdmin` address and calls `require_auth()`.
     /// The Stellar network verifies the Ed25519 signature — we never trust
     /// the caller's assertion of identity.
-    fn require_municipality_role(env: &Env) -> Address {
+    fn require_municipality_role(env: &Env) -> Result<Address, Error> {
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::MunicipalityAdmin)
-            .expect("EchoGrid: not initialized");
+            .ok_or(Error::NotInitialized)?;
         // require_auth() aborts the transaction if the signature is invalid.
         admin.require_auth();
-        admin
+        Ok(admin)
     }
 
     /// Retrieves the `OracleAddress` and calls `require_auth()`.
     /// This ensures only the Rust AgentPay backend (holding the oracle keypair)
     /// can trigger payouts — no user can call `payout` directly.
-    fn require_oracle_role(env: &Env) -> Address {
+    fn require_oracle_role(env: &Env) -> Result<Address, Error> {
         let oracle: Address = env
             .storage()
             .instance()
             .get(&DataKey::OracleAddress)
-            .expect("EchoGrid: not initialized");
+            .ok_or(Error::NotInitialized)?;
         oracle.require_auth();
-        oracle
+        Ok(oracle)
     }
 }
 
@@ -382,7 +419,6 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "proof already claimed")]
     fn test_replay_attack_blocked() {
         let (env, _, client, _, _, user) = setup();
 
@@ -392,17 +428,24 @@ mod test {
         // First claim — should succeed.
         client.payout(&user, &proof);
 
-        // Second claim with the same proof — must panic.
-        client.payout(&user, &proof);
+        // Second claim with the same proof — must return Error::ReplayClaim.
+        assert_eq!(
+            client.try_payout(&user, &proof).unwrap_err(),
+            Ok(Error::ReplayClaim)
+        );
     }
 
     #[test]
-    #[should_panic(expected = "contract already initialized")]
     fn test_reinit_blocked() {
         let (_, _, client, municipality, oracle, _) = setup();
         let fake_token = municipality.clone();
-        // Attempting to re-initialize must be rejected.
-        client.initialize(&municipality, &oracle, &fake_token, &999_i128);
+        // Attempting to re-initialize must return Error::AlreadyInitialized.
+        assert_eq!(
+            client
+                .try_initialize(&municipality, &oracle, &fake_token, &999_i128)
+                .unwrap_err(),
+            Ok(Error::AlreadyInitialized)
+        );
     }
 
     #[test]
@@ -413,26 +456,61 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "deposit amount must be positive")]
     fn test_deposit_zero_or_negative_fails() {
         let (_, _, client, _, _, _) = setup();
-        client.deposit(&0_i128);
+        assert_eq!(
+            client.try_deposit(&0_i128).unwrap_err(),
+            Ok(Error::InvalidAmount)
+        );
+        assert_eq!(
+            client.try_deposit(&-50_i128).unwrap_err(),
+            Ok(Error::InvalidAmount)
+        );
     }
 
     #[test]
-    #[should_panic(expected = "bounty must be positive")]
     fn test_set_bounty_zero_or_negative_fails() {
         let (_, _, client, _, _, _) = setup();
-        client.set_bounty(&0_i128);
+        assert_eq!(
+            client.try_set_bounty(&0_i128).unwrap_err(),
+            Ok(Error::InvalidBounty)
+        );
+        assert_eq!(
+            client.try_set_bounty(&-10_i128).unwrap_err(),
+            Ok(Error::InvalidBounty)
+        );
     }
 
     #[test]
-    #[should_panic(expected = "insufficient escrow balance")]
+    fn test_initialize_invalid_bounty_fails() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let municipality = Address::generate(&env);
+        let oracle = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let token_id = env
+            .register_stellar_asset_contract_v2(token_admin)
+            .address();
+        let contract_id = env.register_contract(None, NegaWattEscrow);
+        let client = NegaWattEscrowClient::new(&env, &contract_id);
+
+        assert_eq!(
+            client
+                .try_initialize(&municipality, &oracle, &token_id, &0_i128)
+                .unwrap_err(),
+            Ok(Error::InvalidBounty)
+        );
+    }
+
+    #[test]
     fn test_payout_insufficient_balance() {
         let (env, _, client, _, _, user) = setup();
         // Escrow has 0 balance, bounty is 100
         let proof: BytesN<32> = BytesN::from_array(&env, &[9u8; 32]);
-        client.payout(&user, &proof);
+        assert_eq!(
+            client.try_payout(&user, &proof).unwrap_err(),
+            Ok(Error::InsufficientBalance)
+        );
     }
 
     #[test]
