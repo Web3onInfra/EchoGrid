@@ -1635,4 +1635,162 @@ mod test {
             Ok(Error::ReplayClaim)
         );
     }
+
+    struct SimpleRng {
+        state: u64,
+    }
+
+    impl SimpleRng {
+        fn new(seed: u64) -> Self {
+            Self { state: seed }
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            let mut x = self.state;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.state = x;
+            x.wrapping_mul(0x2545F4914F6CDD1D)
+        }
+
+        fn gen_range(&mut self, min: u64, max: u64) -> u64 {
+            min + (self.next_u64() % (max - min + 1))
+        }
+    }
+
+    #[test]
+    fn test_seeded_randomized_invariants() {
+        let (env, token_id, client, municipality, _, _) = setup();
+        env.budget().reset_unlimited();
+        StellarAssetClient::new(&env, &token_id).mint(&municipality, &1_000_000_000_i128);
+
+        let mut rng = SimpleRng::new(0xCAFE_BABE_DEAD_BEEF);
+
+        let recipients = [
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+        ];
+
+        let mut total_deposited: i128 = 0;
+        let mut total_withdrawn: i128 = 0;
+        let mut total_paid_out: i128 = 0;
+
+        extern crate std;
+        let mut spent_proofs: std::collections::BTreeSet<[u8; 32]> =
+            std::collections::BTreeSet::new();
+        let mut spent_list: std::vec::Vec<[u8; 32]> = std::vec::Vec::new();
+        let mut proof_counter: u64 = 1000;
+
+        for step in 0..100 {
+            let op = rng.gen_range(0, 4);
+            match op {
+                0 => {
+                    // Deposit
+                    let amount = rng.gen_range(50, 2_000) as i128;
+                    if client.try_deposit(&amount).is_ok() {
+                        total_deposited += amount;
+                    }
+                }
+                1 => {
+                    // Withdraw
+                    let recipient_idx = rng.gen_range(0, (recipients.len() - 1) as u64) as usize;
+                    let to = &recipients[recipient_idx];
+                    let amount = rng.gen_range(20, 1_500) as i128;
+                    if client.try_withdraw(to, &amount).is_ok() {
+                        total_withdrawn += amount;
+                    }
+                }
+                2 => {
+                    // Payout (fresh or replay)
+                    let recipient_idx = rng.gen_range(0, (recipients.len() - 1) as u64) as usize;
+                    let recipient = &recipients[recipient_idx];
+
+                    let (proof_bytes, is_replay) =
+                        if !spent_list.is_empty() && rng.gen_range(0, 10) < 4 {
+                            let idx = rng.gen_range(0, (spent_list.len() - 1) as u64) as usize;
+                            (spent_list[idx], true)
+                        } else {
+                            proof_counter += 1;
+                            let mut bytes = [0u8; 32];
+                            let step_bytes = proof_counter.to_be_bytes();
+                            bytes[24..32].copy_from_slice(&step_bytes);
+                            (bytes, false)
+                        };
+
+                    let proof = BytesN::from_array(&env, &proof_bytes);
+                    let res = client.try_payout(recipient, &proof);
+
+                    if is_replay {
+                        // A replay proof MUST NEVER succeed!
+                        assert!(res.is_err(), "Replay proof succeeded at step {}", step);
+                    } else if res.is_ok() {
+                        let bounty = client.bounty();
+                        let cap = client.get_config().per_payout_cap;
+                        // Invariant: No payout above cap
+                        assert!(bounty <= cap, "Payout {} exceeds cap {}", bounty, cap);
+
+                        total_paid_out += bounty;
+                        spent_proofs.insert(proof_bytes);
+                        spent_list.push(proof_bytes);
+                    }
+                }
+                3 => {
+                    // Toggle Pause
+                    if client.is_paused() {
+                        client.unpause();
+                    } else {
+                        client.pause();
+                    }
+                }
+                4 => {
+                    // Advance time
+                    let advance_secs = rng.gen_range(1, 100_000);
+                    let current_ts = env.ledger().timestamp();
+                    env.ledger().set_timestamp(current_ts + advance_secs);
+                    let current_seq = env.ledger().sequence();
+                    env.ledger()
+                        .set_sequence_number(current_seq + (advance_secs as u32 / 5).max(1));
+                }
+                _ => unreachable!(),
+            }
+
+            // --- INVARIANTS CHECKED AFTER EVERY STEP ---
+
+            // 1. Balance conservation: deposits - withdrawals - payouts == pool_balance
+            let expected_balance = total_deposited - total_withdrawn - total_paid_out;
+            assert_eq!(
+                client.pool_balance(),
+                expected_balance,
+                "Balance conservation violated at step {}: pool_balance={} expected={}",
+                step,
+                client.pool_balance(),
+                expected_balance
+            );
+
+            // 2. Window spend never exceeds window budget
+            let cfg = client.get_config();
+            assert!(
+                client.window_spent() <= cfg.window_budget,
+                "Window spend {} exceeds budget {} at step {}",
+                client.window_spent(),
+                cfg.window_budget,
+                step
+            );
+
+            // 3. Every spent proof hash is recorded as claimed
+            if !spent_list.is_empty() {
+                let sample_idx = rng.gen_range(0, (spent_list.len() - 1) as u64) as usize;
+                let sample_proof = BytesN::from_array(&env, &spent_list[sample_idx]);
+                assert!(
+                    client.is_claimed(&sample_proof),
+                    "Spent proof not marked as claimed at step {}",
+                    step
+                );
+            }
+        }
+    }
 }
