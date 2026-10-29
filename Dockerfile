@@ -4,7 +4,7 @@
 # Stage 1: Builder
 # Multi-stage build with dependency caching to minimize build times and image footprint.
 # ==============================================================================
-FROM rust:1.82-slim-bookworm AS builder
+FROM rust:1-slim-bookworm AS builder
 
 # Install build dependencies: OpenSSL development packages, pkg-config, and CA certs
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +26,7 @@ RUN mkdir -p oracle/src acoustic_cli/src spikes/soroban_rpc/src && \
     echo "fn main() {}" > oracle/src/main.rs && \
     echo "fn main() {}" > acoustic_cli/src/main.rs && \
     echo "fn main() {}" > spikes/soroban_rpc/src/main.rs && \
-    cargo build --release -p echogrid-oracle && \
+    cargo build --release --locked -p echogrid-oracle && \
     rm -rf oracle/src acoustic_cli/src spikes/soroban_rpc/src
 
 # Copy real source trees and tests
@@ -36,7 +36,7 @@ COPY spikes spikes
 
 # Compile release binary and strip symbols to minimize binary size
 RUN touch oracle/src/main.rs && \
-    cargo build --release -p echogrid-oracle && \
+    cargo build --release --locked -p echogrid-oracle && \
     strip /usr/src/echogrid/target/release/oracle
 
 # ==============================================================================
