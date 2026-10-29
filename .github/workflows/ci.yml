@@ -15,6 +15,7 @@ jobs:
       rust: ${{ steps.changes.outputs.rust }}
       python: ${{ steps.changes.outputs.python }}
       contract: ${{ steps.changes.outputs.contract }}
+      app: ${{ steps.changes.outputs.app }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,6 +37,9 @@ jobs:
               - 'Cargo.*'
               - '.cargo/**'
               - 'deny.toml'
+              - '.github/workflows/**'
+            app:
+              - 'app/**'
               - '.github/workflows/**'
             python:
               - 'research/**'
@@ -151,3 +155,39 @@ jobs:
 
       - name: Build, Optimize & Enforce Size Budget
         run: bash scripts/build_contract.sh
+
+  app:
+    name: App CI
+    needs: filter
+    if: ${{ needs.filter.outputs.app == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'app/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Lint
+        working-directory: app
+        run: npm run lint
+
+      - name: Typecheck
+        working-directory: app
+        run: npm run typecheck
+
+      - name: Unit Tests
+        working-directory: app
+        run: npm run test
+
+      - name: Build
+        working-directory: app
+        run: npm run build
