@@ -1,0 +1,101 @@
+name: Deploy PWA to Vercel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy-vercel.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Deploy to Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: "app/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Lint and Typecheck
+        working-directory: app
+        run: |
+          npm run lint
+          npm run typecheck
+
+      - name: Run Tests
+        working-directory: app
+        run: npm run test
+
+      - name: Build PWA Bundle
+        working-directory: app
+        env:
+          VITE_ORACLE_URL: ${{ secrets.VITE_ORACLE_URL || 'https://oracle.echogrid.org' }}
+        run: |
+          npm run build
+          npm run size
+
+      - name: Check Vercel Credentials
+        id: check_token
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
+            echo "has_token=false" >> $GITHUB_OUTPUT
+            echo "NOTICE: VERCEL_TOKEN is not configured in repository secrets."
+            echo "Pre-deployment checks and build succeeded; skipping live Vercel deployment."
+          else
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Pull Vercel Environment Information
+        if: ${{ steps.check_token.outputs.has_token == 'true' }}
+        working-directory: app
+        run: npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build Project Artifacts
+        if: ${{ steps.check_token.outputs.has_token == 'true' }}
+        working-directory: app
+        run: npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VITE_ORACLE_URL: ${{ secrets.VITE_ORACLE_URL || 'https://oracle.echogrid.org' }}
+
+      - name: Deploy Project Artifacts to Vercel
+        id: deploy
+        if: ${{ steps.check_token.outputs.has_token == 'true' }}
+        working-directory: app
+        run: |
+          DEPLOY_URL=$(npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment-url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Run Smoke Tests on Deployed PWA
+        if: ${{ steps.check_token.outputs.has_token == 'true' && steps.deploy.outputs.deployment-url != '' }}
+        working-directory: app
+        run: |
+          node scripts/smoke-test.js "${{ steps.deploy.outputs.deployment-url }}" "${{ secrets.VITE_ORACLE_URL || 'https://oracle.echogrid.org' }}"
+
+      - name: Run Local Preview Smoke Test (Fallback)
+        if: ${{ steps.check_token.outputs.has_token != 'true' }}
+        working-directory: app
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          PREVIEW_PID=$!
+          sleep 2
+          node scripts/smoke-test.js http://localhost:4173 --skip-oracle
+          kill $PREVIEW_PID

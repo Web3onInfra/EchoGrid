@@ -4,7 +4,11 @@ import path from 'path';
 
 describe('Deploy Configuration and Security Headers', () => {
   const publicDir = path.resolve(__dirname, '../../public');
-  const workflowPath = path.resolve(__dirname, '../../../.github/workflows/deploy-pages.yml');
+  const appDir = path.resolve(__dirname, '../../');
+  const vercelWorkflowPath = path.resolve(
+    __dirname,
+    '../../../.github/workflows/deploy-vercel.yml',
+  );
 
   it('contains Cloudflare Pages _headers with strict CSP and Permissions-Policy', () => {
     const headersPath = path.join(publicDir, '_headers');
@@ -39,12 +43,40 @@ describe('Deploy Configuration and Security Headers', () => {
     expect(content).toMatch(/\/\*\s+\/index\.html\s+200/);
   });
 
-  it('configures Cloudflare Pages deployment workflow with smoke testing', () => {
-    expect(fs.existsSync(workflowPath)).toBe(true);
-    const content = fs.readFileSync(workflowPath, 'utf8');
-    expect(content).toContain('cloudflare/wrangler-action@v3');
+  it('contains vercel.json with SPA rewrites, strict CSP, and immutable asset cache headers', () => {
+    const vercelConfigPath = path.join(appDir, 'vercel.json');
+    expect(fs.existsSync(vercelConfigPath)).toBe(true);
+
+    const vercelConfig = JSON.parse(fs.readFileSync(vercelConfigPath, 'utf8'));
+    expect(vercelConfig.cleanUrls).toBe(true);
+    expect(vercelConfig.rewrites).toBeDefined();
+    expect(
+      vercelConfig.rewrites.some((r: { destination: string }) => r.destination === '/index.html'),
+    ).toBe(true);
+    expect(vercelConfig.headers).toBeDefined();
+
+    const rootHeaders = vercelConfig.headers.find((h: { source: string }) => h.source === '/(.*)');
+    expect(rootHeaders).toBeDefined();
+    const csp = rootHeaders.headers.find(
+      (kv: { key: string }) => kv.key === 'Content-Security-Policy',
+    );
+    expect(csp).toBeDefined();
+    expect(csp.value).toContain("default-src 'self'");
+
+    const permissions = rootHeaders.headers.find(
+      (kv: { key: string }) => kv.key === 'Permissions-Policy',
+    );
+    expect(permissions).toBeDefined();
+    expect(permissions.value).toContain('microphone=(self)');
+    expect(permissions.value).toContain('screen-wake-lock=(self)');
+  });
+
+  it('configures Vercel deployment workflow with build and smoke testing', () => {
+    expect(fs.existsSync(vercelWorkflowPath)).toBe(true);
+    const content = fs.readFileSync(vercelWorkflowPath, 'utf8');
+    expect(content).toContain('vercel build');
+    expect(content).toContain('vercel deploy');
     expect(content).toContain('smoke-test.js');
-    expect(content).toContain('steps.deploy.outputs.deployment-url');
-    expect(content).toContain('CLOUDFLARE_API_TOKEN');
+    expect(content).toContain('VERCEL_TOKEN');
   });
 });

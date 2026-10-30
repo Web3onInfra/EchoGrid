@@ -49,6 +49,16 @@ export class MicrophoneCapture {
     return this.mediaStream !== null && this.audioContext !== null;
   }
 
+  public async resume(): Promise<void> {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      try {
+        await this.audioContext.resume();
+      } catch {
+        // Defensive: ignore resume failure
+      }
+    }
+  }
+
   public getSettings(): TrackDebugSettings | null {
     return this.activeSettings;
   }
