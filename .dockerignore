@@ -4,7 +4,12 @@
 
 # Cargo & build artifacts
 target/
+**/target/
 **/*.rs.bk
+
+# Frontend PWA (deployed to Vercel, not needed in Oracle Docker image)
+app/
+.vercel/
 
 # Sensitive files and local secrets
 .env
@@ -19,6 +24,12 @@ target/
 *.db-shm
 *.sqlite
 *.sqlite3
+
+# Non-code assets, data, and scripts
+data/
+reports/
+scripts/
+deployments/
 
 # Documentation and non-code assets
 docs/
