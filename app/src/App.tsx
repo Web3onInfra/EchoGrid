@@ -1,13 +1,36 @@
-import React from 'react';
-import { env } from './env';
+import React, { useState } from 'react';
+import { ThemeProvider } from './context/ThemeContext';
+import { Header } from './components/Header';
+import { TabBar, TabKey } from './components/TabBar';
+import { GridView } from './views/GridView';
+import { MonitorView } from './views/MonitorView';
+import { WalletView } from './views/WalletView';
+import { ReceiptView } from './views/ReceiptView';
+
+export const AppContent: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TabKey>('grid');
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors selection:bg-emerald-500 selection:text-white">
+      <Header />
+
+      <main className="flex-1 max-w-md w-full mx-auto p-4 pb-24 overflow-y-auto">
+        {activeTab === 'grid' && <GridView />}
+        {activeTab === 'monitor' && <MonitorView />}
+        {activeTab === 'wallet' && <WalletView />}
+        {activeTab === 'receipt' && <ReceiptView />}
+      </main>
+
+      <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+    </div>
+  );
+};
 
 export const App: React.FC = () => {
   return (
-    <main className="min-h-screen p-4 flex flex-col items-center justify-center">
-      <h1 className="text-2xl font-bold">EchoGrid</h1>
-      <p className="text-sm opacity-80 mt-2">Decentralized NegaWatt Marketplace</p>
-      <div className="mt-4 p-3 bg-slate-800 rounded text-xs font-mono">Oracle: {env.oracleUrl}</div>
-    </main>
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 };
 
