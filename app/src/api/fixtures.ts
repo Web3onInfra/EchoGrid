@@ -88,4 +88,12 @@ export const handlers = [
   http.get('*/api/v1/claims/:id', ({ params }) => {
     return HttpResponse.json({ ...mockClaimPoll, claim_id: params.id as string });
   }),
+  http.get('https://friendbot.stellar.org*', () => {
+    return HttpResponse.json({ result: 'ok' });
+  }),
+  http.get('https://horizon-testnet.stellar.org/accounts/:id', () => {
+    return HttpResponse.json({
+      balances: [{ asset_type: 'native', balance: '10000.0000000' }],
+    });
+  }),
 ];

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
+import { useOracle } from '../context/OracleContext';
 import { isValidStellarAddress, formatAddress } from '../wallet/validation';
 import { FreighterWalletProvider } from '../wallet/providers/freighterProvider';
 import {
@@ -12,16 +13,43 @@ import {
   AlertCircle,
   ExternalLink,
   Smartphone,
+  Coins,
+  KeyRound,
+  Trash2,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 export const WalletView: React.FC = () => {
-  const { isConnected, address, type, connectPaste, connectFreighter, disconnect } = useWallet();
+  const {
+    isConnected,
+    address,
+    type,
+    balance,
+    accountExists,
+    isFunding,
+    connectPaste,
+    connectFreighter,
+    createDemoWallet,
+    fundDemoWallet,
+    forgetDemoWallet,
+    getDemoSecretKey,
+    refreshBalance,
+    disconnect,
+  } = useWallet();
+
+  const { config } = useOracle();
+  const isNetworkTestnet = !config || config.network === 'testnet';
+
   const [pasteInput, setPasteInput] = useState('');
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [freighterError, setFreighterError] = useState<string | null>(null);
   const [freighterLoading, setFreighterLoading] = useState(false);
   const [hasFreighter, setHasFreighter] = useState<boolean | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [fundingError, setFundingError] = useState<string | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
 
   useEffect(() => {
     const provider = new FreighterWalletProvider();
@@ -56,11 +84,34 @@ export const WalletView: React.FC = () => {
     }
   };
 
-  const handleCopy = () => {
+  const handleCreateDemo = async () => {
+    if (!isNetworkTestnet) return;
+    await createDemoWallet();
+  };
+
+  const handleFundFriendbot = async () => {
+    setFundingError(null);
+    try {
+      await fundDemoWallet();
+    } catch (err: unknown) {
+      setFundingError(err instanceof Error ? err.message : 'Funding failed');
+    }
+  };
+
+  const handleCopyAddress = () => {
     if (address) {
       navigator.clipboard?.writeText(address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedAddress(true);
+      setTimeout(() => setCopiedAddress(false), 2000);
+    }
+  };
+
+  const handleCopySecret = () => {
+    const sec = getDemoSecretKey();
+    if (sec) {
+      navigator.clipboard?.writeText(sec);
+      setCopiedSecret(true);
+      setTimeout(() => setCopiedSecret(false), 2000);
     }
   };
 
@@ -85,7 +136,11 @@ export const WalletView: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-300">
-              {type === 'paste' ? 'Read-Only Address' : type === 'freighter' ? 'Freighter' : type}
+              {type === 'paste'
+                ? 'Read-Only Address'
+                : type === 'freighter'
+                  ? 'Freighter'
+                  : 'Demo Keypair'}
             </span>
             <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5" />
@@ -108,18 +163,52 @@ export const WalletView: React.FC = () => {
             </span>
           </div>
 
+          {/* Balance Row */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-emerald-500/20">
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block tracking-wider">
+                Testnet Balance
+              </span>
+              <span
+                data-testid="wallet-balance-display"
+                className="text-lg font-extrabold text-slate-900 dark:text-white font-mono"
+              >
+                {balance} XLM
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span
+                data-testid="account-status-badge"
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  accountExists
+                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                }`}
+              >
+                {accountExists ? 'Active on Ledger' : 'Unfunded'}
+              </span>
+              <button
+                onClick={() => refreshBalance()}
+                aria-label="Refresh balance"
+                className="p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2 pt-2 border-t border-emerald-500/20">
             <button
-              onClick={handleCopy}
+              onClick={handleCopyAddress}
               data-testid="copy-address-btn"
               className="touch-target flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50"
             >
-              {copied ? (
+              {copiedAddress ? (
                 <Check className="w-4 h-4 text-emerald-500" />
               ) : (
                 <Copy className="w-4 h-4" />
               )}
-              {copied ? 'Copied!' : 'Copy Address'}
+              {copiedAddress ? 'Copied!' : 'Copy Address'}
             </button>
 
             <button
@@ -133,6 +222,130 @@ export const WalletView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Demo Wallet & Friendbot Card */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+              <Coins className="w-4 h-4 text-amber-500" />
+              Demo Wallet & Friendbot
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              One-tap ephemeral in-browser keypair funded with 10,000 test lumens.
+            </p>
+          </div>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+            Demo
+          </span>
+        </div>
+
+        {/* Mandatory Security Warning */}
+        <div
+          data-testid="demo-wallet-warning"
+          className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2"
+        >
+          <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">
+            <strong className="font-semibold block">Testnet only, never reuse on mainnet.</strong>
+            Keys are generated in browser storage for demo testing. Never store real funds in this
+            wallet.
+          </div>
+        </div>
+
+        {!isNetworkTestnet && (
+          <div
+            data-testid="demo-wallet-disabled-banner"
+            className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300"
+          >
+            Demo wallet and Friendbot are hard-disabled on non-testnet environments.
+          </div>
+        )}
+
+        {isNetworkTestnet && (
+          <div className="space-y-2.5">
+            {type !== 'demo' ? (
+              <button
+                onClick={handleCreateDemo}
+                data-testid="generate-demo-wallet-btn"
+                className="touch-target w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-[0.98] text-white font-semibold text-xs transition flex items-center justify-center gap-1.5"
+              >
+                <Coins className="w-4 h-4" />
+                <span>Generate Testnet Demo Wallet</span>
+              </button>
+            ) : (
+              <div className="space-y-2.5">
+                {fundingError && (
+                  <span className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    {fundingError}
+                  </span>
+                )}
+
+                <button
+                  onClick={handleFundFriendbot}
+                  disabled={isFunding}
+                  data-testid="fund-friendbot-btn"
+                  className="touch-target w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5"
+                >
+                  <Coins className="w-4 h-4" />
+                  <span>
+                    {isFunding
+                      ? 'Funding via Friendbot (+10,000 XLM)...'
+                      : 'Fund Account (+10,000 XLM via Friendbot)'}
+                  </span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowSecret(!showSecret)}
+                    data-testid="export-secret-btn"
+                    className="touch-target flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-1.5"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>{showSecret ? 'Hide Secret Key' : 'Export Secret Key'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => forgetDemoWallet()}
+                    data-testid="forget-demo-btn"
+                    className="touch-target py-2 px-3 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Forget</span>
+                  </button>
+                </div>
+
+                {showSecret && (
+                  <div
+                    data-testid="secret-key-display"
+                    className="p-3 rounded-xl bg-slate-900 text-slate-100 font-mono text-xs space-y-2 border border-slate-800"
+                  >
+                    <span className="text-[10px] text-amber-400 uppercase font-bold block">
+                      Secret Key (Ed25519)
+                    </span>
+                    <span className="block truncate text-[11px] select-all">
+                      {getDemoSecretKey()}
+                    </span>
+                    <button
+                      onClick={handleCopySecret}
+                      data-testid="copy-secret-btn"
+                      className="touch-target px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-sans font-semibold flex items-center gap-1"
+                    >
+                      {copiedSecret ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      {copiedSecret ? 'Copied Secret!' : 'Copy Secret'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Freighter Extension Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3 transition-colors">
@@ -161,7 +374,7 @@ export const WalletView: React.FC = () => {
             </div>
             <p className="text-[11px] leading-relaxed">
               Mobile browsers (iOS Safari, Android Chrome) do not support extensions. Please use the{' '}
-              <strong>Demo Wallet</strong> below or <strong>Paste Address</strong>.
+              <strong>Demo Wallet</strong> above or <strong>Paste Address</strong>.
             </p>
             <a
               href="https://www.freighter.app/"
@@ -238,21 +451,6 @@ export const WalletView: React.FC = () => {
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
-      </div>
-
-      {/* Demo Wallet Provider Placeholder (PR 8) */}
-      <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 flex items-center justify-between opacity-75">
-        <div>
-          <span className="text-xs font-bold text-slate-900 dark:text-white block">
-            Instant Demo Wallet & Friendbot
-          </span>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">
-            Ephemeral in-browser testnet keypair funded with 10,000 test lumens
-          </span>
-        </div>
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-          PR 8
-        </span>
       </div>
     </div>
   );

@@ -32,3 +32,8 @@ data/*
 Thumbs.db
 .idea/
 .vscode/
+
+# Local database files
+*.db
+*.db-shm
+*.db-wal
