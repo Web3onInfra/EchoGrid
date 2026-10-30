@@ -100,3 +100,4 @@ EchoGrid Phase 3 has fulfilled all requirements outlined in the specification:
 - Acoustic demand-response verification executed entirely client-side.
 - Soroban smart contract micropayments wired end-to-end to Stellar Testnet.
 - Ready for municipal grid strain pilot trials.
+

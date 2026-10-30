@@ -1,0 +1,12 @@
+target/
+**/target/
+contracts/
+oracle/
+acoustic_cli/
+node_modules/
+**/node_modules/
+.git/
+*.db*
+data/
+test-results/
+playwright-report/

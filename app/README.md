@@ -105,3 +105,4 @@ node scripts/smoke-test.js http://localhost:5173 --skip-oracle
 EchoGrid PWA is configured for zero-configuration continuous deployment on Vercel:
 - Configuration: `app/vercel.json` provides strict CSP headers, SPA rewrites, and Permissions-Policy.
 - Pipeline: `.github/workflows/deploy-vercel.yml` automatically builds, tests, deploys, and smoke-tests every push to `main`.
+
