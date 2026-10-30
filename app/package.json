@@ -12,7 +12,8 @@
     "test": "node --max-old-space-size=4096 --max-semi-space-size=64 ./node_modules/vitest/vitest.mjs run",
     "typecheck": "tsc --noEmit",
     "test:e2e": "node --max-old-space-size=4096 --max-semi-space-size=64 ./node_modules/@playwright/test/cli.js test",
-    "size": "node scripts/check-size.js"
+    "size": "node scripts/check-size.js",
+    "smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
     "@stellar/freighter-api": "^6.0.1",
