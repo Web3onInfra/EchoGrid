@@ -1,5 +1,6 @@
+export function normalizeUrl(rawUrl: string, defaultProtocol?: string): string;
 export function runCheck(name: string, fn: () => Promise<unknown>): Promise<boolean>;
-export function fetchJson<T = unknown>(url: string): Promise<T>;
+export function fetchJson<T = unknown>(url: string, options?: RequestInit): Promise<T>;
 export function checkOracleHealth(oracleUrl: string): Promise<void>;
 export function checkOracleCors(oracleUrl: string, targetOrigin?: string): Promise<void>;
 export function checkOracleReady(oracleUrl: string): Promise<void>;
@@ -25,3 +26,15 @@ export interface SmokeTestResult {
 }
 
 export function runSmokeTests(options?: SmokeTestOptions): Promise<SmokeTestResult>;
+
+export function isDirectExecution(): boolean;
+
+export interface ParsedCliArgs {
+  targetOrigin: string;
+  oracleUrl: string;
+  skipOracle: boolean;
+  skipPwa: boolean;
+  showHelp: boolean;
+}
+
+export function parseCliArgs(argv?: string[]): ParsedCliArgs;
