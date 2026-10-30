@@ -4,6 +4,7 @@ import { OracleProvider } from './context/OracleContext';
 import { WalletProvider } from './context/WalletContext';
 import { Header } from './components/Header';
 import { DegradedStateBanner } from './components/DegradedStateBanner';
+import { InstallPromptBanner } from './components/InstallPromptBanner';
 import { TabBar, TabKey } from './components/TabBar';
 import { GridView } from './views/GridView';
 import { WalletView } from './views/WalletView';
@@ -31,6 +32,7 @@ export const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors selection:bg-emerald-500 selection:text-white">
       <Header />
+      <InstallPromptBanner />
       <DegradedStateBanner />
 
       <main className="flex-1 max-w-md w-full mx-auto p-4 pb-24 overflow-y-auto">
