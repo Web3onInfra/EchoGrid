@@ -9,7 +9,7 @@ export interface WalletState {
 export interface IWalletProvider {
   type: WalletType;
   name: string;
-  isAvailable(): boolean;
+  isAvailable(): boolean | Promise<boolean>;
   connect(params?: unknown): Promise<string>;
   disconnect(): Promise<void>;
   getAddress(): Promise<string | null>;

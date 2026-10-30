@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { WalletType } from '../wallet/types';
 import { PasteWalletProvider } from '../wallet/providers/pasteProvider';
+import { FreighterWalletProvider } from '../wallet/providers/freighterProvider';
 import { isValidStellarAddress } from '../wallet/validation';
 
 export interface WalletContextType {
@@ -8,6 +9,7 @@ export interface WalletContextType {
   address: string | null;
   isConnected: boolean;
   connectPaste: (address: string) => Promise<void>;
+  connectFreighter: () => Promise<void>;
   disconnect: () => Promise<void>;
 }
 
@@ -16,6 +18,7 @@ const WalletContext = createContext<WalletContextType>({
   address: null,
   isConnected: false,
   connectPaste: async () => {},
+  connectFreighter: async () => {},
   disconnect: async () => {},
 });
 
@@ -48,6 +51,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setAddress(validated);
   }, []);
 
+  const connectFreighter = useCallback(async () => {
+    const provider = new FreighterWalletProvider();
+    const validated = await provider.connect();
+    setType('freighter');
+    setAddress(validated);
+  }, []);
+
   const disconnect = useCallback(async () => {
     setType(null);
     setAddress(null);
@@ -60,6 +70,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         address,
         isConnected: Boolean(address && type),
         connectPaste,
+        connectFreighter,
         disconnect,
       }}
     >
