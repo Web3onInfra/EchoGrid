@@ -1,19 +1,32 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { setupServer } from 'msw/node';
+import { handlers } from './api/fixtures';
 import App from './App';
 
+const server = setupServer(...handlers);
+
 describe('App Shell and Navigation', () => {
+  beforeAll(() => server.listen());
+  afterEach(() => server.resetHandlers());
+  afterAll(() => server.close());
+
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.className = '';
   });
 
-  it('renders application header with Testnet indicator', () => {
+  it('renders application header with Testnet indicator', async () => {
     render(<App />);
     expect(screen.getByText('EchoGrid')).toBeInTheDocument();
     const indicator = screen.getByTestId('testnet-indicator');
     expect(indicator).toBeInTheDocument();
     expect(indicator).toHaveTextContent('Testnet');
+
+    // Waits for bootstrap
+    await waitFor(() => {
+      expect(screen.queryByTestId('degraded-banner')).not.toBeInTheDocument();
+    });
   });
 
   it('navigates through all four tabs with minimum touch targets', () => {

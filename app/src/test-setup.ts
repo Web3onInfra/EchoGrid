@@ -1,5 +1,11 @@
 import '@testing-library/jest-dom';
 
+// Ensure AbortController / AbortSignal in jsdom match Node's global for fetch
+if (typeof globalThis.AbortController !== 'undefined') {
+  window.AbortController = globalThis.AbortController;
+  window.AbortSignal = globalThis.AbortSignal;
+}
+
 // JSDOM localStorage mock
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
