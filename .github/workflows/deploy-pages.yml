@@ -1,0 +1,58 @@
+name: Deploy PWA to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: "app/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Lint and Typecheck
+        working-directory: app
+        run: |
+          npm run lint
+          npm run typecheck
+
+      - name: Run Tests
+        working-directory: app
+        run: npm run test
+
+      - name: Build PWA Bundle
+        working-directory: app
+        env:
+          VITE_ORACLE_URL: ${{ secrets.VITE_ORACLE_URL || 'https://oracle.echogrid.org' }}
+        run: |
+          npm run build
+          npm run size
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: echogrid-app
+          directory: app/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
