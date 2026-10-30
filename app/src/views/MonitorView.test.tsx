@@ -5,7 +5,7 @@ import { AudioPipeline } from '../audio/pipeline';
 import { PipelineFrameEvent } from '../audio/pipelineTypes';
 import { DetectorState, FrameResult } from '../detector/types';
 
-describe('MonitorView State Machine', () => {
+describe('MonitorView State Machine & Simulator Mode', () => {
   let fakePipeline: AudioPipeline;
   let pipelineListener: ((event: PipelineFrameEvent) => void) | null = null;
 
@@ -139,8 +139,91 @@ describe('MonitorView State Machine', () => {
 
     expect(screen.getByTestId('monitor-status-badge')).toHaveTextContent('DROP CONFIRMED');
     expect(screen.getByTestId('drop-confirmed-state')).toBeInTheDocument();
-    expect(onDropConfirmed).toHaveBeenCalledWith(dropFrame);
+    expect(onDropConfirmed).toHaveBeenCalledWith(dropFrame, false);
     expect(screen.getByTestId('monitor-aria-live')).toHaveTextContent(/Power-down drop confirmed/i);
+  });
+
+  it('operates in Simulator Mode without microphone and flags claim as simulated', async () => {
+    const onDropConfirmed = vi.fn();
+    render(<MonitorView pipelineOverride={fakePipeline} onDropConfirmed={onDropConfirmed} />);
+
+    // Toggle simulator mode
+    const toggleBtn = screen.getByTestId('toggle-simulator-mode-btn');
+    fireEvent.click(toggleBtn);
+
+    expect(screen.getByTestId('simulated-mode-pill')).toBeInTheDocument();
+    expect(screen.getByTestId('simulator-policy-banner')).toBeInTheDocument();
+    expect(screen.getByText(/Per Phase 2 policy, simulated claims/i)).toBeInTheDocument();
+
+    // Start simulator monitoring
+    const startBtn = screen.getByTestId('start-monitoring-btn');
+    await act(async () => {
+      fireEvent.click(startBtn);
+    });
+
+    // Should NOT call real mic pipeline.start()
+    expect(fakePipeline.start).not.toHaveBeenCalled();
+    expect(screen.getByTestId('monitor-status-badge')).toHaveTextContent('CALIBRATING');
+
+    // Calibrate into ARMED
+    for (let i = 0; i < 5; i++) {
+      act(() => {
+        pipelineListener?.({
+          frameResult: {
+            timestamp_s: i * 0.032,
+            state: DetectorState.ON,
+            event_triggered: false,
+            current_energy_db: 42.0,
+            running_baseline_db: 42.0,
+            drop_duration_s: 0.0,
+          },
+          features: {
+            totalBandEnergyDb: 42.0,
+            bandEnergiesDb: [30.0, 41.0, 36.0],
+            fftMagnitudes: new Float32Array(513),
+          },
+          processingTimeMs: 1.0,
+        });
+      });
+    }
+
+    expect(screen.getByTestId('monitor-status-badge')).toHaveTextContent('ARMED');
+    expect(screen.getByTestId('simulate-stop-appliance-btn')).toBeInTheDocument();
+
+    // Simulate power-down stop appliance
+    const stopApplianceBtn = screen.getByTestId('simulate-stop-appliance-btn');
+    act(() => {
+      fireEvent.click(stopApplianceBtn);
+    });
+
+    expect(screen.getByTestId('sim-drop-verifying')).toBeInTheDocument();
+
+    // Emit drop confirmed frame
+    const dropFrame: FrameResult = {
+      timestamp_s: 4.8,
+      state: DetectorState.OFF_DETECTED,
+      event_triggered: true,
+      current_energy_db: 20.0,
+      running_baseline_db: 42.0,
+      drop_duration_s: 3.1,
+    };
+
+    act(() => {
+      pipelineListener?.({
+        frameResult: dropFrame,
+        features: {
+          totalBandEnergyDb: 20.0,
+          bandEnergiesDb: [10.0, 12.0, 8.0],
+          fftMagnitudes: new Float32Array(513),
+        },
+        processingTimeMs: 1.0,
+      });
+    });
+
+    expect(screen.getByTestId('monitor-status-badge')).toHaveTextContent('DROP CONFIRMED');
+    expect(screen.getByText(/Simulated Claim — No real XLM payout/i)).toBeInTheDocument();
+    // Must assert onDropConfirmed called with simulated: true
+    expect(onDropConfirmed).toHaveBeenCalledWith(dropFrame, true);
   });
 
   it('cancels monitoring and returns to IDLE state', async () => {

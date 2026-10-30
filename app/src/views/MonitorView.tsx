@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AudioPipeline } from '../audio/pipeline';
+import { HumSimulator } from '../audio/simulator';
 import { SpectrogramCanvas } from '../components/SpectrogramCanvas';
 import { BandMeters } from '../components/BandMeters';
 import { DetectorState, FrameResult } from '../detector/types';
 
-// Lightweight inline SVG icons to eliminate AST memory overhead from lucide-react full bundle
+// Lightweight inline SVG icons
 const ActivityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M22 12h-4l-3 9L9 3l-3 9H2" />
@@ -80,15 +81,34 @@ const EyeOffIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' })
   </svg>
 );
 
+const RadioIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <circle cx="12" cy="12" r="2" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"
+    />
+  </svg>
+);
+
+const PowerOffIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M18.36 6.64a9 9 0 11-12.73 0M12 2v10" />
+  </svg>
+);
+
 export type MonitorStatus = 'IDLE' | 'PERMISSION' | 'CALIBRATING' | 'ARMED' | 'DROP_CONFIRMED';
 
 export interface MonitorViewProps {
   pipelineOverride?: AudioPipeline;
-  onDropConfirmed?: (frame: FrameResult) => void;
+  onDropConfirmed?: (frame: FrameResult, simulated: boolean) => void;
 }
 
 export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDropConfirmed }) => {
   const [status, setStatus] = useState<MonitorStatus>('IDLE');
+  const [isSimulatorMode, setIsSimulatorMode] = useState<boolean>(false);
+  const [simApplianceStopped, setSimApplianceStopped] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState<string>(
     'Monitor is idle. Tap Start Monitoring to calibrate with your running appliance.',
@@ -102,6 +122,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
   const [confirmedFrame, setConfirmedFrame] = useState<FrameResult | null>(null);
 
   const pipelineRef = useRef<AudioPipeline>(pipelineOverride || new AudioPipeline());
+  const simulatorRef = useRef<HumSimulator>(new HumSimulator(16000));
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const calibrationFramesRef = useRef<number>(0);
 
@@ -139,8 +160,10 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
 
   const stopMonitoring = useCallback(() => {
     pipelineRef.current.stop();
+    simulatorRef.current.stop();
     releaseWakeLock();
     setStatus('IDLE');
+    setSimApplianceStopped(false);
     setFftMagnitudes(null);
     setBandEnergies([-60, -60, -60]);
     calibrationFramesRef.current = 0;
@@ -149,6 +172,19 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
 
   const startMonitoring = async () => {
     setErrorMessage(null);
+    setSimApplianceStopped(false);
+
+    if (isSimulatorMode) {
+      // Simulator mode: feed synthetic audio without requesting microphone permission
+      setStatus('CALIBRATING');
+      setStatusAnnouncement('Simulator running: Calibrating baseline 60+120 Hz hum...');
+      calibrationFramesRef.current = 0;
+      simulatorRef.current.start((chunk) => {
+        pipelineRef.current.feedSamples(chunk);
+      });
+      return;
+    }
+
     setStatus('PERMISSION');
     setStatusAnnouncement('Requesting microphone permission...');
 
@@ -166,6 +202,14 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
     }
   };
 
+  const handleSimulateStopAppliance = () => {
+    setSimApplianceStopped(true);
+    simulatorRef.current.stopAppliance();
+    setStatusAnnouncement(
+      'Appliance stopped! Waiting for sustained power-down drop verification...',
+    );
+  };
+
   // Subscribe to pipeline audio frame events
   useEffect(() => {
     const pipeline = pipelineRef.current;
@@ -175,11 +219,12 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
 
       if (status === 'CALIBRATING') {
         calibrationFramesRef.current += 1;
-        // Calibrate for at least 5 frames (~160ms) of valid baseline
         if (calibrationFramesRef.current >= 5) {
           setStatus('ARMED');
           setStatusAnnouncement(
-            'Appliance hum calibrated. Monitor is ARMED. Waiting for power-down.',
+            isSimulatorMode
+              ? 'Simulator ARMED. Tap Simulate Power-Down to trigger detector.'
+              : 'Appliance hum calibrated. Monitor is ARMED. Waiting for power-down.',
           );
         }
       } else if (status === 'ARMED') {
@@ -189,7 +234,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
           setStatusAnnouncement(
             'Power-down drop confirmed! Appliance shut down detected. Ready to claim payout.',
           );
-          onDropConfirmed?.(event.frameResult);
+          onDropConfirmed?.(event.frameResult, isSimulatorMode);
         }
       }
     });
@@ -197,13 +242,15 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
     return () => {
       unsubscribe();
     };
-  }, [status, onDropConfirmed]);
+  }, [status, isSimulatorMode, onDropConfirmed]);
 
   // Clean up on component unmount
   useEffect(() => {
     const pipeline = pipelineRef.current;
+    const simulator = simulatorRef.current;
     return () => {
       pipeline.stop();
+      simulator.stop();
       releaseWakeLock();
     };
   }, []);
@@ -215,32 +262,78 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
         {statusAnnouncement}
       </div>
 
-      {/* Header Card */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+      {/* Header Card with Simulator Switcher */}
+      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <ActivityIcon className="w-5 h-5 text-emerald-500" />
             Acoustic Monitor
           </h2>
-          <span
-            data-testid="monitor-status-badge"
-            className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
-              status === 'ARMED'
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 animate-pulse'
-                : status === 'CALIBRATING'
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                  : status === 'DROP_CONFIRMED'
-                    ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-            }`}
-          >
-            {status.replace('_', ' ')}
-          </span>
+          <div className="flex items-center gap-2">
+            {isSimulatorMode && (
+              <span
+                data-testid="simulated-mode-pill"
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+              >
+                Simulated
+              </span>
+            )}
+            <span
+              data-testid="monitor-status-badge"
+              className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                status === 'ARMED'
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 animate-pulse'
+                  : status === 'CALIBRATING'
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                    : status === 'DROP_CONFIRMED'
+                      ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              {status.replace('_', ' ')}
+            </span>
+          </div>
         </div>
-        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+
+        <p className="text-xs text-slate-600 dark:text-slate-400">
           Detects appliance power-down transitions via 50/60/120 Hz acoustic hum drops.
         </p>
+
+        {/* Mode Toggle Button */}
+        {status === 'IDLE' && (
+          <div className="pt-1 flex items-center justify-between border-t border-slate-100 dark:border-slate-800">
+            <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <RadioIcon className="w-3.5 h-3.5 text-amber-500" />
+              <span>Input Mode</span>
+            </span>
+            <button
+              onClick={() => setIsSimulatorMode(!isSimulatorMode)}
+              data-testid="toggle-simulator-mode-btn"
+              className="touch-target text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+            >
+              <span>{isSimulatorMode ? 'Switch to Real Mic' : 'Switch to Simulator Mode'}</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Simulator Mode Policy Notice */}
+      {isSimulatorMode && (
+        <div
+          data-testid="simulator-policy-banner"
+          className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2"
+        >
+          <RadioIcon className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-bold block">Simulator Mode Active (Simulated)</span>
+            <p className="text-[11px] leading-relaxed">
+              Uses an oscillator-synthesized 60+120 Hz acoustic profile to test the real detector.
+              Per Phase 2 policy, simulated claims verify against the oracle but yield zero on-chain
+              payout.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Hidden Tab Warning (Foreground-only audio notice) */}
       {isTabHidden && status !== 'IDLE' && (
@@ -281,16 +374,21 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
         {status === 'IDLE' && (
           <div className="space-y-3 text-center py-2">
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              Ensure your appliance (refrigerator, AC, compressor) is actively humming, then tap
-              below to begin calibration.
+              {isSimulatorMode
+                ? 'Synthesizes an acoustic refrigerator/compressor hum directly into the detector pipeline.'
+                : 'Ensure your appliance is actively humming, then tap below to begin calibration.'}
             </p>
             <button
               onClick={startMonitoring}
               data-testid="start-monitoring-btn"
               className="touch-target w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-sm"
             >
-              <MicIcon className="w-4 h-4" />
-              <span>Start Monitoring</span>
+              {isSimulatorMode ? (
+                <RadioIcon className="w-4 h-4" />
+              ) : (
+                <MicIcon className="w-4 h-4" />
+              )}
+              <span>{isSimulatorMode ? 'Start Simulator Stream' : 'Start Monitoring'}</span>
             </button>
             <span className="text-[10px] text-slate-500 block">
               Audio is strictly analyzed locally on your device. Zero audio data is ever
@@ -306,7 +404,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
               <span>Calibrating Baseline Hum...</span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Measuring ambient noise and running appliance hum level. Keep device near appliance.
+              Measuring hum baseline. Keep device steady.
             </p>
             <button
               onClick={stopMonitoring}
@@ -324,9 +422,32 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
             <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
               <ShieldCheckIcon className="w-4 h-4 text-emerald-600 shrink-0" />
               <span className="font-semibold">
-                Monitor Armed — Turn off appliance to trigger payout!
+                {isSimulatorMode
+                  ? 'Simulator Armed — Tap below to simulate turning off the appliance!'
+                  : 'Monitor Armed — Turn off appliance to trigger payout!'}
               </span>
             </div>
+
+            {isSimulatorMode && !simApplianceStopped && (
+              <button
+                onClick={handleSimulateStopAppliance}
+                data-testid="simulate-stop-appliance-btn"
+                className="touch-target w-full py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-sm"
+              >
+                <PowerOffIcon className="w-4 h-4" />
+                <span>Simulate Power-Down (Stop Appliance)</span>
+              </button>
+            )}
+
+            {isSimulatorMode && simApplianceStopped && (
+              <div
+                data-testid="sim-drop-verifying"
+                className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-800 dark:text-indigo-300 text-center font-medium animate-pulse"
+              >
+                Appliance stopped! Verifying &gt;3.0s sustained drop...
+              </div>
+            )}
+
             <button
               onClick={stopMonitoring}
               data-testid="cancel-monitoring-btn"
@@ -347,6 +468,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
             <p className="text-xs text-slate-600 dark:text-slate-400">
               A sustained &gt;6 dB acoustic drop was verified locally at{' '}
               {confirmedFrame?.timestamp_s.toFixed(1)}s.
+              {isSimulatorMode && ' (Simulated Claim — No real XLM payout)'}
             </p>
             <button
               onClick={stopMonitoring}
