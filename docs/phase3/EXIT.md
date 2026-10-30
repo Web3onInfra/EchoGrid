@@ -80,7 +80,7 @@ The entire client application was architected, implemented, tested, and deployed
 ### Human Gates
 - **Gate 1 (End of PR 1)**: Approved Phase 3 architecture, state machine, and stack defaults (`docs/phase3/design.md`).
 - **Gate 2 (Before PR 25)**: Host selection confirmed as **Vercel** (`@[Quote] instead of cloudflare, let's host this on vercel instead`).
-- **Gate 3 (Deploy Verification)**: Production origin verified and added to Oracle CORS allowed origins list.
+- **Gate 3 (Deploy Verification)**: Production origin (https://echogrid-pwa.vercel.app) verified and added to Oracle CORS allowed origins list.
 - **Gate 4 (Physical Device Matrix)**: Physical testing on Android Chrome (install prompt, wake lock) and iOS Safari ("Add to Home Screen", audio resume) documented in `docs/phase3/device-test-matrix.md`.
 
 ### Production Hosting Configuration
