@@ -41,7 +41,7 @@ describe('App Shell and Navigation', () => {
 
     // Switch to Monitor
     fireEvent.click(monitorTab);
-    expect(screen.getByText('Appliance Hum Detection')).toBeInTheDocument();
+    expect(screen.getByTestId('monitor-view-container')).toBeInTheDocument();
 
     // Switch to Wallet
     const walletTab = screen.getByRole('tab', { name: 'Wallet' });

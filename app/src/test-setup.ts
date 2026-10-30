@@ -57,3 +57,12 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: () => false,
   }),
 });
+
+// HTMLCanvasElement mock for jsdom
+if (typeof HTMLCanvasElement !== 'undefined') {
+  HTMLCanvasElement.prototype.getContext = (() => ({
+    drawImage: () => {},
+    fillRect: () => {},
+    fillStyle: '',
+  })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+}
