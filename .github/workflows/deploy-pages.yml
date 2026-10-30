@@ -58,20 +58,19 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         id: deploy
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         if: ${{ steps.check_token.outputs.has_token == 'true' }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: echogrid-app
-          directory: app/dist
+          command: pages deploy app/dist --project-name=echogrid-app
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Smoke Tests on Deployed PWA
-        if: ${{ steps.deploy.outputs.url != '' }}
+        if: ${{ steps.deploy.outputs.deployment-url != '' }}
         working-directory: app
         run: |
-          node scripts/smoke-test.js "${{ steps.deploy.outputs.url }}" "${{ secrets.VITE_ORACLE_URL || 'https://oracle.echogrid.org' }}"
+          node scripts/smoke-test.js "${{ steps.deploy.outputs.deployment-url }}" "${{ secrets.VITE_ORACLE_URL || 'https://oracle.echogrid.org' }}"
 
       - name: Run Local Preview Smoke Test (Fallback)
         if: ${{ steps.check_token.outputs.has_token != 'true' }}

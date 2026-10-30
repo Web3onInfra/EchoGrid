@@ -1,12 +1,6 @@
 {
   "version": 1,
   "include": ["/*"],
-  "exclude": [
-    "/assets/*",
-    "/icon.svg",
-    "/pwa-*.png",
-    "/manifest.webmanifest",
-    "/sw.js",
-    "/workbox-*.js"
-  ]
+  "exclude": ["/assets/*", "/icon.svg", "/pwa-*.png", "/manifest.webmanifest", "/sw.js", "/workbox-*.js"]
 }
+
