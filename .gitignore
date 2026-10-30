@@ -6,6 +6,10 @@ node_modules/
 **/node_modules/
 dist/
 **/dist/
+test-results/
+**/test-results/
+playwright-report/
+**/playwright-report/
 .venv/
 __pycache__/
 *.py[cod]
