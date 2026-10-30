@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { OracleProvider } from './context/OracleContext';
 import { WalletProvider } from './context/WalletContext';
@@ -6,9 +6,24 @@ import { Header } from './components/Header';
 import { DegradedStateBanner } from './components/DegradedStateBanner';
 import { TabBar, TabKey } from './components/TabBar';
 import { GridView } from './views/GridView';
-import { MonitorView } from './views/MonitorView';
 import { WalletView } from './views/WalletView';
 import { ReceiptView } from './views/ReceiptView';
+
+// Lazy-load MonitorView to keep initial JS bundle size strictly under 200 KB gzipped
+const LazyMonitorView = lazy(() =>
+  import('./views/MonitorView').then((m) => ({ default: m.MonitorView })),
+);
+
+export const MonitorLoadingSkeleton: React.FC = () => (
+  <div
+    data-testid="monitor-skeleton"
+    className="space-y-4 animate-pulse motion-reduce:animate-none"
+  >
+    <div className="h-24 bg-slate-200 dark:bg-slate-800 rounded-2xl" />
+    <div className="h-48 bg-slate-200 dark:bg-slate-800 rounded-2xl" />
+    <div className="h-32 bg-slate-200 dark:bg-slate-800 rounded-2xl" />
+  </div>
+);
 
 export const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('grid');
@@ -20,7 +35,11 @@ export const AppContent: React.FC = () => {
 
       <main className="flex-1 max-w-md w-full mx-auto p-4 pb-24 overflow-y-auto">
         {activeTab === 'grid' && <GridView />}
-        {activeTab === 'monitor' && <MonitorView />}
+        {activeTab === 'monitor' && (
+          <Suspense fallback={<MonitorLoadingSkeleton />}>
+            <LazyMonitorView />
+          </Suspense>
+        )}
         {activeTab === 'wallet' && <WalletView />}
         {activeTab === 'receipt' && <ReceiptView />}
       </main>

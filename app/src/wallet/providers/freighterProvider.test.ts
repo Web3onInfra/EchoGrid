@@ -15,45 +15,40 @@ describe('FreighterWalletProvider', () => {
   let provider: FreighterWalletProvider;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    provider = new FreighterWalletProvider();
-  });
-
-  it('detects when extension is installed', async () => {
-    vi.mocked(freighterApi.isConnected).mockResolvedValue({ isConnected: true });
-    expect(await provider.isAvailable()).toBe(true);
-  });
-
-  it('detects when extension is unavailable', async () => {
-    vi.mocked(freighterApi.isConnected).mockResolvedValue({ isConnected: false });
-    expect(await provider.isAvailable()).toBe(false);
-  });
-
-  it('connects successfully on testnet', async () => {
-    vi.mocked(freighterApi.isConnected).mockResolvedValue({ isConnected: true });
-    vi.mocked(freighterApi.requestAccess).mockResolvedValue({ address: validAddress });
-    vi.mocked(freighterApi.getAddress).mockResolvedValue({ address: validAddress });
-    vi.mocked(freighterApi.getNetworkDetails).mockResolvedValue({
+    vi.spyOn(freighterApi, 'isConnected').mockResolvedValue({ isConnected: true });
+    vi.spyOn(freighterApi, 'requestAccess').mockResolvedValue({ address: validAddress });
+    vi.spyOn(freighterApi, 'getAddress').mockResolvedValue({ address: validAddress });
+    vi.spyOn(freighterApi, 'getNetworkDetails').mockResolvedValue({
       network: 'TESTNET',
       networkUrl: 'https://horizon-testnet.stellar.org',
       networkPassphrase: 'Test SDF Network ; September 2015',
     });
+    provider = new FreighterWalletProvider();
+  });
 
+  it('detects when extension is installed', async () => {
+    vi.spyOn(freighterApi, 'isConnected').mockResolvedValue({ isConnected: true });
+    expect(await provider.isAvailable()).toBe(true);
+  });
+
+  it('detects when extension is unavailable', async () => {
+    vi.spyOn(freighterApi, 'isConnected').mockResolvedValue({ isConnected: false });
+    expect(await provider.isAvailable()).toBe(false);
+  });
+
+  it('connects successfully on testnet', async () => {
     const addr = await provider.connect();
     expect(addr).toBe(validAddress);
   });
 
   it('throws descriptive error with mobile guidance when not installed', async () => {
-    vi.mocked(freighterApi.isConnected).mockResolvedValue({ isConnected: false });
+    vi.spyOn(freighterApi, 'isConnected').mockResolvedValue({ isConnected: false });
 
     await expect(provider.connect()).rejects.toThrow(/Freighter extension not detected.*mobile/i);
   });
 
   it('rejects connection if Freighter is set to Mainnet', async () => {
-    vi.mocked(freighterApi.isConnected).mockResolvedValue({ isConnected: true });
-    vi.mocked(freighterApi.requestAccess).mockResolvedValue({ address: validAddress });
-    vi.mocked(freighterApi.getAddress).mockResolvedValue({ address: validAddress });
-    vi.mocked(freighterApi.getNetworkDetails).mockResolvedValue({
+    vi.spyOn(freighterApi, 'getNetworkDetails').mockResolvedValue({
       network: 'PUBLIC',
       networkUrl: 'https://horizon.stellar.org',
       networkPassphrase: 'Public Global Stellar Network ; September 2015',

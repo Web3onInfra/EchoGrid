@@ -29,7 +29,7 @@ describe('App Shell and Navigation', () => {
     });
   });
 
-  it('navigates through all four tabs with minimum touch targets', () => {
+  it('navigates through all four tabs with minimum touch targets', async () => {
     render(<App />);
 
     // Default tab: Grid
@@ -41,7 +41,9 @@ describe('App Shell and Navigation', () => {
 
     // Switch to Monitor
     fireEvent.click(monitorTab);
-    expect(screen.getByTestId('monitor-view-container')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('monitor-view-container')).toBeInTheDocument();
+    });
 
     // Switch to Wallet
     const walletTab = screen.getByRole('tab', { name: 'Wallet' });
