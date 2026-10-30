@@ -13,8 +13,23 @@ EchoGrid replaces expensive IoT smart meters with the microphone on ubiquitous s
 
 ---
 
+## 📖 About EchoGrid
+
+### The Challenge
+In rapidly developing power grids across emerging markets (such as Ghana's national grid), peak demand spikes trigger brownouts and rolling blackouts (*dumsor*), stressing regional substations and forcing costly reliance on emergency diesel peaking plants. Traditional automated demand-response solutions mandate imported smart meters ($150–$300+ per household), which presents an insurmountable barrier for widespread residential adoption.
+
+### The Solution: Acoustic NegaWatts
+A **NegaWatt** is a unit of power saved rather than generated. EchoGrid transforms demand-response into an accessible consumer micro-economy with zero hardware cost:
+- **Zero-Hardware Sensing**: Leverages ubiquitous smartphone microphones to listen for the distinct acoustic signature (50/60 Hz mains hum and mechanical harmonics) of heavy inductive appliances.
+- **Strict Edge Privacy**: Audio processing is performed 100% locally in-browser via Web Audio API and Web Workers. Raw sound never leaves the device.
+- **Smart Escrows on Soroban**: Municipalities and grid operators deposit USDC bounty pools into automated Soroban smart contracts.
+- **Instant Stellar Settlement**: Verifiable appliance power-downs yield an instant, non-custodial Stellar Testnet payout to the user's wallet via Freighter or browser keypair.
+
+---
+
 ## 📑 Table of Contents
 
+- [About EchoGrid](#-about-echogrid)
 - [Live Deployments & Network Details](#-live-deployments--network-details)
 - [Monorepo Architecture](#-monorepo-architecture)
 - [System Architecture Flow](#-system-architecture-flow)
