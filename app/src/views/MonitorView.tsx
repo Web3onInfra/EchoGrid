@@ -4,6 +4,7 @@ import { HumSimulator } from '../audio/simulator';
 import { SpectrogramCanvas } from '../components/SpectrogramCanvas';
 import { BandMeters } from '../components/BandMeters';
 import { DetectorState, FrameResult } from '../detector/types';
+import { triggerHaptic, HAPTIC_PATTERNS } from '../utils/haptics';
 
 // Lightweight inline SVG icons
 const ActivityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
@@ -229,6 +230,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
         }
       } else if (status === 'ARMED') {
         if (event.frameResult.state === DetectorState.OFF_DETECTED) {
+          triggerHaptic(HAPTIC_PATTERNS.CONFIRMED);
           setStatus('DROP_CONFIRMED');
           setConfirmedFrame(event.frameResult);
           setStatusAnnouncement(
@@ -282,7 +284,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
               data-testid="monitor-status-badge"
               className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
                 status === 'ARMED'
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 animate-pulse'
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 animate-pulse motion-reduce:animate-none'
                   : status === 'CALIBRATING'
                     ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
                     : status === 'DROP_CONFIRMED'
@@ -400,7 +402,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
         {status === 'CALIBRATING' && (
           <div className="space-y-3 text-center py-2" data-testid="calibrating-state">
             <div className="flex items-center justify-center gap-2 text-xs font-bold text-amber-600 dark:text-amber-400">
-              <SparklesIcon className="w-4 h-4 animate-spin" />
+              <SparklesIcon className="w-4 h-4 animate-spin motion-reduce:animate-none" />
               <span>Calibrating Baseline Hum...</span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
