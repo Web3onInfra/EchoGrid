@@ -33,7 +33,7 @@ describe('App Shell and Navigation', () => {
     render(<App />);
 
     // Default tab: Grid
-    expect(screen.getByText('Grid Strain Status')).toBeInTheDocument();
+    expect(screen.getByTestId('simulated-grid-banner')).toBeInTheDocument();
 
     // Tab buttons exist and have touch-target class (44px min)
     const monitorTab = screen.getByRole('tab', { name: 'Monitor' });
@@ -56,7 +56,7 @@ describe('App Shell and Navigation', () => {
     // Back to Grid
     const gridTab = screen.getByRole('tab', { name: 'Grid' });
     fireEvent.click(gridTab);
-    expect(screen.getByText('Grid Strain Status')).toBeInTheDocument();
+    expect(screen.getByTestId('simulated-grid-banner')).toBeInTheDocument();
   });
 
   it('toggles light and dark themes', () => {
