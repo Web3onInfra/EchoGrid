@@ -121,7 +121,7 @@ export async function checkOracleChallenge(oracleUrl) {
   if (!data.challenge_id || typeof data.challenge_id !== 'string') {
     throw new Error(`Invalid or missing challenge_id: ${JSON.stringify(data)}`);
   }
-  if (!data.expires_at || typeof data.expires_at !== 'number') {
+  if (!data.expires_at || (typeof data.expires_at !== 'number' && typeof data.expires_at !== 'string')) {
     throw new Error(`Invalid or missing expires_at: ${JSON.stringify(data)}`);
   }
 }
