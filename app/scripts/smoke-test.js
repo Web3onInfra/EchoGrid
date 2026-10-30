@@ -192,10 +192,6 @@ export async function checkPwaIcons(targetOrigin) {
         `Icon ${iconPath} returned HTML (SPA rewrite fallback); file missing on host`,
       );
     }
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('text/html')) {
-      throw new Error(`Icon ${iconPath} returned HTML (SPA rewrite fallback); file missing on host`);
-    }
   }
 }
 

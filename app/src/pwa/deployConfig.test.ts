@@ -42,9 +42,9 @@ describe('Deploy Configuration and Security Headers', () => {
   it('configures Cloudflare Pages deployment workflow with smoke testing', () => {
     expect(fs.existsSync(workflowPath)).toBe(true);
     const content = fs.readFileSync(workflowPath, 'utf8');
-    expect(content).toContain('cloudflare/pages-action@v1');
+    expect(content).toContain('cloudflare/wrangler-action@v3');
     expect(content).toContain('smoke-test.js');
-    expect(content).toContain('steps.deploy.outputs.url');
+    expect(content).toContain('steps.deploy.outputs.deployment-url');
     expect(content).toContain('CLOUDFLARE_API_TOKEN');
   });
 });
