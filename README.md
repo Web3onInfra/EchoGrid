@@ -22,7 +22,12 @@ EchoGrid/
 │       ├── routes.rs
 │       ├── stellar.rs
 │       └── types.rs
-├── acoustic_cli/              # Phase 3 — Edge AI Mock CLI (Rust)
+├── app/                       # Phase 3 — Mobile PWA Client (React + Vite + TypeScript)
+│   ├── src/
+│   ├── public/
+│   ├── package.json
+│   └── README.md
+├── acoustic_cli/              # Prototype — Edge AI CLI (Rust)
 │   ├── Cargo.toml
 │   └── src/main.rs
 ├── Cargo.toml                 # Workspace root (oracle + acoustic_cli)
@@ -87,7 +92,17 @@ cargo run
 # Server starts on http://localhost:8080
 `
 
-### Phase 3 — Run the Acoustic CLI Demo
+### Phase 3 — Run the Mobile Web App (PWA)
+`bash
+cd app
+npm install
+npm run dev
+# Local preview: http://localhost:5173
+`
+
+For mobile PWA installation (iOS/Android), background audio limitations, simulator walkthrough, and Vercel hosting details, refer to the [EchoGrid App Guide](app/README.md).
+
+### Prototype — Run the Acoustic CLI Demo
 `ash
 cd acoustic_cli
 # Replace G... with any 56-char Stellar address for the demo
