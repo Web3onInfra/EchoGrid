@@ -130,7 +130,11 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
   // Monitor visibilitychange to warn user when mobile browser suspends background audio
   useEffect(() => {
     const handleVisibility = () => {
-      setIsTabHidden(document.hidden);
+      const hidden = document.hidden;
+      setIsTabHidden(hidden);
+      if (!hidden && pipelineRef.current.isActive()) {
+        pipelineRef.current.resume().catch(() => {});
+      }
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {

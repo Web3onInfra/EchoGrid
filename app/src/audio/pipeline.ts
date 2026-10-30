@@ -33,6 +33,12 @@ export class AudioPipeline {
     return this.isRunning;
   }
 
+  public async resume(): Promise<void> {
+    if (this.isRunning) {
+      await this.microphone.resume();
+    }
+  }
+
   public async start(): Promise<TrackDebugSettings> {
     if (this.isRunning) {
       return this.microphone.getSettings()!;
