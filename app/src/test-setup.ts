@@ -1,4 +1,11 @@
 import '@testing-library/jest-dom';
+import { cleanup } from '@testing-library/react';
+import { afterEach } from 'vitest';
+
+// Automatically clean up DOM after each test in singleFork mode
+afterEach(() => {
+  cleanup();
+});
 
 // Ensure AbortController / AbortSignal in jsdom match Node's global for fetch
 if (typeof globalThis.AbortController !== 'undefined') {

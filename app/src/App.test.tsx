@@ -46,7 +46,7 @@ describe('App Shell and Navigation', () => {
     // Switch to Wallet
     const walletTab = screen.getByRole('tab', { name: 'Wallet' });
     fireEvent.click(walletTab);
-    expect(screen.getByText('Account & Balance')).toBeInTheDocument();
+    expect(screen.getByTestId('paste-address-input')).toBeInTheDocument();
 
     // Switch to Receipt
     const receiptTab = screen.getByRole('tab', { name: 'Receipt' });

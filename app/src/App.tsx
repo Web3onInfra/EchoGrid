@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { OracleProvider } from './context/OracleContext';
+import { WalletProvider } from './context/WalletContext';
 import { Header } from './components/Header';
 import { DegradedStateBanner } from './components/DegradedStateBanner';
 import { TabBar, TabKey } from './components/TabBar';
@@ -33,7 +34,9 @@ export const App: React.FC = () => {
   return (
     <ThemeProvider>
       <OracleProvider>
-        <AppContent />
+        <WalletProvider>
+          <AppContent />
+        </WalletProvider>
       </OracleProvider>
     </ThemeProvider>
   );
