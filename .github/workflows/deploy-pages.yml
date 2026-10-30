@@ -45,14 +45,40 @@ jobs:
           npm run build
           npm run size
 
+      - name: Check Cloudflare Credentials
+        id: check_token
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "has_token=false" >> $GITHUB_OUTPUT
+            echo "NOTICE: CLOUDFLARE_API_TOKEN is not configured in repository secrets."
+            echo "Pre-deployment checks and build succeeded; skipping live Cloudflare Pages deployment."
+          else
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Deploy to Cloudflare Pages
+        id: deploy
         uses: cloudflare/pages-action@v1
-        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        if: ${{ steps.check_token.outputs.has_token == 'true' }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: echogrid-app
           directory: app/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Smoke Tests on Deployed PWA
+        if: ${{ steps.deploy.outputs.url != '' }}
+        working-directory: app
+        run: |
+          node scripts/smoke-test.js "${{ steps.deploy.outputs.url }}" "${{ secrets.VITE_ORACLE_URL || 'https://oracle.echogrid.org' }}"
+
+      - name: Run Local Preview Smoke Test (Fallback)
+        if: ${{ steps.check_token.outputs.has_token != 'true' }}
+        working-directory: app
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          PREVIEW_PID=$!
+          sleep 2
+          node scripts/smoke-test.js http://localhost:4173 --skip-oracle
+          kill $PREVIEW_PID

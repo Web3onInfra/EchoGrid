@@ -4,6 +4,7 @@ import path from 'path';
 
 describe('Deploy Configuration and Security Headers', () => {
   const publicDir = path.resolve(__dirname, '../../public');
+  const workflowPath = path.resolve(__dirname, '../../../.github/workflows/deploy-pages.yml');
 
   it('contains Cloudflare Pages _headers with strict CSP and Permissions-Policy', () => {
     const headersPath = path.join(publicDir, '_headers');
@@ -36,5 +37,14 @@ describe('Deploy Configuration and Security Headers', () => {
 
     const content = fs.readFileSync(redirectsPath, 'utf8');
     expect(content).toMatch(/\/\*\s+\/index\.html\s+200/);
+  });
+
+  it('configures Cloudflare Pages deployment workflow with smoke testing', () => {
+    expect(fs.existsSync(workflowPath)).toBe(true);
+    const content = fs.readFileSync(workflowPath, 'utf8');
+    expect(content).toContain('cloudflare/pages-action@v1');
+    expect(content).toContain('smoke-test.js');
+    expect(content).toContain('steps.deploy.outputs.url');
+    expect(content).toContain('CLOUDFLARE_API_TOKEN');
   });
 });
