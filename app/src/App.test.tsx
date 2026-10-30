@@ -51,7 +51,7 @@ describe('App Shell and Navigation', () => {
     // Switch to Receipt
     const receiptTab = screen.getByRole('tab', { name: 'Receipt' });
     fireEvent.click(receiptTab);
-    expect(screen.getByText('Settlement History')).toBeInTheDocument();
+    expect(screen.getByText('Claim Receipt & History')).toBeInTheDocument();
 
     // Back to Grid
     const gridTab = screen.getByRole('tab', { name: 'Grid' });
