@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import featureFixtures from '../../../research/fixtures/feature_parity.json';
+import fs from 'fs';
+import path from 'path';
 import { AudioFeatureExtractor, cooleyTukeyFft } from './features';
+
+const fixturesPath = path.resolve(__dirname, '../../../research/fixtures/feature_parity.json');
+const featureFixtures = JSON.parse(fs.readFileSync(fixturesPath, 'utf-8'));
 
 describe('AudioFeatureExtractor', () => {
   it('correctly computes simple Cooley-Tukey FFT of impulse', () => {
@@ -25,7 +29,6 @@ describe('AudioFeatureExtractor', () => {
 
         expect(features.totalBandEnergyDb).toBeCloseTo(
           testCase.expected_total_energy_db,
-          // Tolerance check: diff within 0.01 dB
           TOLERANCE_DB < 0.1 ? 1 : 0,
         );
         const diff = Math.abs(features.totalBandEnergyDb - testCase.expected_total_energy_db);

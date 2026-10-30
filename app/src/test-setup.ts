@@ -10,6 +10,9 @@ if (typeof Buffer !== 'undefined' && typeof Uint8Array !== 'undefined') {
 // Automatically clean up DOM after each test in singleFork mode
 afterEach(() => {
   cleanup();
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.innerHTML = '';
+  }
 });
 
 // Ensure AbortController / AbortSignal in jsdom match Node's global for fetch
