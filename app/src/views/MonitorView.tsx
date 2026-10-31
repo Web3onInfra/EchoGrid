@@ -122,11 +122,12 @@ export interface MonitorViewProps {
   pipelineOverride?: AudioPipeline;
   onDropConfirmed?: (frame: FrameResult, simulated: boolean) => void;
   onNavigateToReceipt?: () => void;
+  initialSimulated?: boolean;
 }
 
-export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDropConfirmed, onNavigateToReceipt }) => {
+export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDropConfirmed, onNavigateToReceipt, initialSimulated = false }) => {
   const [status, setStatus] = useState<MonitorStatus>('IDLE');
-  const [isSimulatorMode, setIsSimulatorMode] = useState<boolean>(false);
+  const [isSimulatorMode, setIsSimulatorMode] = useState<boolean>(initialSimulated);
   const [simApplianceStopped, setSimApplianceStopped] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState<string>(
@@ -196,7 +197,22 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
       setClaimStatus('confirmed');
     } catch (err: unknown) {
       setClaimStatus('failed');
-      setClaimError(err instanceof Error ? err.message : 'Claim verification failed');
+      const msg = err instanceof Error ? err.message : 'Claim verification failed';
+      if (msg.includes('Contract, #9') || msg.includes('InsufficientBalance')) {
+        setClaimError(
+          'Testnet Escrow Pool has 0 balance for real payouts. Switch to Simulator Mode to complete settlement.',
+        );
+      } else if (
+        msg.includes('PAYOUT_FAILED') ||
+        msg.includes('Simulation error') ||
+        msg.includes('txMalformed')
+      ) {
+        setClaimError(
+          'On-chain Testnet payout requires contract resource allocation. Switch to Simulator Mode to complete settlement.',
+        );
+      } else {
+        setClaimError(msg);
+      }
     }
   };
 
