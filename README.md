@@ -1,5 +1,6 @@
 # ⚡ EchoGrid — Decentralized NegaWatt Marketplace
 
+[![CI](https://github.com/Web3onInfra/EchoGrid/actions/workflows/ci.yml/badge.svg)](https://github.com/Web3onInfra/EchoGrid/actions/workflows/ci.yml)
 [![Stellar](https://img.shields.io/badge/Stellar-Testnet-blue.svg)](https://stellar.org)
 [![Soroban](https://img.shields.io/badge/Soroban-Smart_Contracts-purple.svg)](https://soroban.stellar.org)
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg)](https://www.rust-lang.org)
