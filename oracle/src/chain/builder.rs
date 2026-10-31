@@ -10,9 +10,10 @@ use stellar_strkey::Strkey;
 use stellar_xdr::curr::{
     AccountId, DecoratedSignature, Hash, HostFunction, InvokeContractArgs, InvokeHostFunctionOp,
     Limits, Memo, MuxedAccount, Operation, OperationBody, Preconditions, PublicKey, ScAddress,
-    ScBytes, ScSymbol, ScVal, SequenceNumber, Signature, SignatureHint, Transaction,
-    TransactionEnvelope, TransactionExt, TransactionSignaturePayload,
-    TransactionSignaturePayloadTaggedTransaction, TransactionV1Envelope, Uint256, WriteXdr,
+    ScBytes, ScSymbol, ScVal, SequenceNumber, Signature, SignatureHint, SorobanAuthorizationEntry,
+    SorobanTransactionData, Transaction, TransactionEnvelope, TransactionExt,
+    TransactionSignaturePayload, TransactionSignaturePayloadTaggedTransaction,
+    TransactionV1Envelope, Uint256, WriteXdr,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -81,6 +82,9 @@ impl PayoutTxBuilder {
     }
 
     /// Builds and signs the transaction envelope returning the base64-encoded XDR.
+    /// When `soroban_data` is provided, wraps it in `TransactionExt::V1(data)` as required by
+    /// Stellar Protocol 20+ for executing `InvokeHostFunctionOp`.
+    #[allow(clippy::too_many_arguments)]
     pub fn build_and_sign_envelope(
         signing_key: &SigningKey,
         network_passphrase: &str,
@@ -89,11 +93,25 @@ impl PayoutTxBuilder {
         proof_hash: &[u8; 32],
         sequence: i64,
         fee: u32,
+        soroban_data: Option<SorobanTransactionData>,
+        auth: Option<Vec<SorobanAuthorizationEntry>>,
     ) -> Result<(TransactionEnvelope, String), BuilderError> {
         let verifying_key = signing_key.verifying_key();
         let pub_bytes = verifying_key.to_bytes();
 
-        let op = Self::build_payout_op(contract_id, recipient_addr, proof_hash)?;
+        let mut op = Self::build_payout_op(contract_id, recipient_addr, proof_hash)?;
+        if let Some(auth_entries) = auth {
+            if let OperationBody::InvokeHostFunction(ref mut invoke_op) = op.body {
+                invoke_op.auth = auth_entries
+                    .try_into()
+                    .map_err(|e| BuilderError::Xdr(format!("{e:?}")))?;
+            }
+        }
+
+        let ext = match soroban_data {
+            Some(data) => TransactionExt::V1(data),
+            None => TransactionExt::V0,
+        };
 
         let tx = Transaction {
             source_account: MuxedAccount::Ed25519(Uint256(pub_bytes)),
@@ -104,7 +122,7 @@ impl PayoutTxBuilder {
             operations: vec![op]
                 .try_into()
                 .map_err(|e| BuilderError::Xdr(format!("{e:?}")))?,
-            ext: TransactionExt::V0,
+            ext,
         };
 
         let mut hasher = Sha256::new();
@@ -188,6 +206,8 @@ mod tests {
             &proof_hash,
             100,
             1000,
+            None,
+            None,
         )
         .unwrap();
 
@@ -235,6 +255,50 @@ mod tests {
                 let tx_hash: [u8; 32] = hash_payload.finalize().into();
 
                 assert!(vk.verify(&tx_hash, &dalek_sig).is_ok());
+            }
+            _ => panic!("Expected TransactionEnvelope::Tx"),
+        }
+    }
+
+    #[test]
+    fn test_payout_envelope_with_soroban_data() {
+        let raw_seed = [42u8; 32];
+        let private_key = PrivateKey(raw_seed);
+        let secret = private_key.as_unredacted().to_string();
+        let signing_key = PayoutTxBuilder::parse_signing_key(&secret).unwrap();
+
+        let contract_id = "CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF";
+        let recipient = "GA4ZH5HAQ77O2KGZJE2PJ5B4FMKVDGWZUZI7HVLTXPTPCEQGXXLDEHXT";
+        let proof_hash = [0xabu8; 32];
+        let passphrase = "Test SDF Network ; September 2015";
+
+        let soroban_b64 = "AAAAAAAAAAAAAAAAAAAD6AAAAGQAAABkAAAAAAAAAGQ=";
+        let soroban_data =
+            SorobanTransactionData::from_xdr_base64(soroban_b64, Limits::none()).unwrap();
+
+        let (_envelope, xdr_base64) = PayoutTxBuilder::build_and_sign_envelope(
+            &signing_key,
+            passphrase,
+            contract_id,
+            recipient,
+            &proof_hash,
+            100,
+            1200,
+            Some(soroban_data.clone()),
+            None,
+        )
+        .unwrap();
+
+        let decoded = TransactionEnvelope::from_xdr_base64(xdr_base64, Limits::none()).unwrap();
+        match decoded {
+            TransactionEnvelope::Tx(v1) => {
+                assert_eq!(v1.tx.fee, 1200);
+                match v1.tx.ext {
+                    TransactionExt::V1(data) => {
+                        assert_eq!(data, soroban_data);
+                    }
+                    _ => panic!("Expected TransactionExt::V1 with SorobanTransactionData"),
+                }
             }
             _ => panic!("Expected TransactionEnvelope::Tx"),
         }

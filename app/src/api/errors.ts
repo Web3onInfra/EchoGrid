@@ -48,6 +48,8 @@ export function getUserErrorMessage(code: string, status?: number): string {
       return 'Cannot reach the EchoGrid Oracle service. It may be offline or unreachable.';
     case 'WRONG_NETWORK':
       return 'EchoGrid operates exclusively on Stellar Testnet. Mainnet is not supported.';
+    case 'PAYOUT_FAILED':
+      return 'On-chain bounty settlement could not be completed on Testnet. Switch to Simulator Mode to complete settlement.';
     default:
       if (status && status >= 500) {
         return 'The oracle service encountered an internal error. Please try again later.';

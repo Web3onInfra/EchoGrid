@@ -9,6 +9,7 @@ import { useWallet } from '../context/WalletContext';
 import { oracleClient } from '../api/oracleClient';
 import { claimSubmissionService, ClaimResult } from '../claim/submissionService';
 import { saveReceipt } from '../claim/receiptStorage';
+import { OracleError } from '../api/errors';
 
 // Lightweight inline SVG icons
 const ActivityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
@@ -198,20 +199,25 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
     } catch (err: unknown) {
       setClaimStatus('failed');
       const msg = err instanceof Error ? err.message : 'Claim verification failed';
+      const oracleErr = err instanceof OracleError ? err : null;
+      const isMalformedOrPayoutFailed =
+        oracleErr?.code === 'PAYOUT_FAILED' ||
+        msg.includes('AAAAAAAAAAD////wAAAAAA==') ||
+        msg.includes('txMALFORMED') ||
+        msg.includes('txMalformed') ||
+        msg.includes('PAYOUT_FAILED') ||
+        msg.includes('Simulation error');
+
       if (msg.includes('Contract, #9') || msg.includes('InsufficientBalance')) {
         setClaimError(
           'Testnet Escrow Pool has 0 balance for real payouts. Switch to Simulator Mode to complete settlement.',
         );
-      } else if (
-        msg.includes('PAYOUT_FAILED') ||
-        msg.includes('Simulation error') ||
-        msg.includes('txMalformed')
-      ) {
+      } else if (isMalformedOrPayoutFailed) {
         setClaimError(
-          'On-chain Testnet payout requires contract resource allocation. Switch to Simulator Mode to complete settlement.',
+          'On-chain Testnet payout requires contract resource allocation or has 0 escrow balance. Switch to Simulator Mode to complete settlement.',
         );
       } else {
-        setClaimError(msg);
+        setClaimError(oracleErr?.userMessage || msg);
       }
     }
   };

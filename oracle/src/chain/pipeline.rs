@@ -6,6 +6,10 @@
 
 use ed25519_dalek::SigningKey;
 use std::time::{Duration, Instant};
+use stellar_xdr::curr::{
+    Limits, ReadXdr, SorobanAuthorizationEntry, SorobanTransactionData, TransactionResult,
+    TransactionResultResult,
+};
 use tracing::{debug, warn};
 
 use crate::chain::builder::PayoutTxBuilder;
@@ -36,6 +40,41 @@ pub enum SubmitResult {
     Timeout {
         tx_hash: String,
     },
+}
+
+/// Decodes a base64 Stellar TransactionResult XDR string into a human-readable diagnostic message.
+pub fn parse_error_result_xdr(raw_xdr: &str) -> String {
+    if let Ok(res) = TransactionResult::from_xdr_base64(raw_xdr, Limits::none()) {
+        match res.result {
+            TransactionResultResult::TxMalformed => {
+                "Stellar transaction rejected: txMALFORMED (malformed transaction envelope or missing Soroban resource data)".to_string()
+            }
+            TransactionResultResult::TxBadSeq => {
+                "Stellar transaction rejected: txBAD_SEQ (sequence number mismatch)".to_string()
+            }
+            TransactionResultResult::TxBadAuth => {
+                "Stellar transaction rejected: txBAD_AUTH (invalid signature or authorization)".to_string()
+            }
+            TransactionResultResult::TxInsufficientBalance => {
+                "Stellar transaction rejected: txINSUFFICIENT_BALANCE (source account has insufficient balance)".to_string()
+            }
+            TransactionResultResult::TxInsufficientFee => {
+                "Stellar transaction rejected: txINSUFFICIENT_FEE (fee charged is less than required)".to_string()
+            }
+            TransactionResultResult::TxBadAuthExtra => {
+                "Stellar transaction rejected: txBAD_AUTH_EXTRA (unused signature found)".to_string()
+            }
+            TransactionResultResult::TxInternalError => {
+                "Stellar transaction rejected: txINTERNAL_ERROR (Stellar core internal error)".to_string()
+            }
+            TransactionResultResult::TxFailed(ops) => {
+                format!("Stellar transaction rejected: txFAILED with {} operations", ops.len())
+            }
+            other => format!("Stellar transaction rejected with code: {other:?}"),
+        }
+    } else {
+        format!("Submission rejected: {raw_xdr}")
+    }
 }
 
 pub struct SubmitPipeline {
@@ -92,6 +131,8 @@ impl SubmitPipeline {
                 proof_hash,
                 sequence,
                 100,
+                None,
+                None,
             )
             .map_err(|e| PipelineError::Builder(e.to_string()))?;
 
@@ -109,7 +150,32 @@ impl SubmitPipeline {
                 .and_then(|f| f.parse().ok())
                 .unwrap_or(100);
 
-            // 3. Assemble finalized envelope with resource fee
+            // Extract SorobanTransactionData and authorization entries from simulation result
+            let soroban_data = match &sim_res.transaction_data {
+                Some(b64) => match SorobanTransactionData::from_xdr_base64(b64, Limits::none()) {
+                    Ok(data) => Some(data),
+                    Err(e) => {
+                        warn!(error = ?e, "Failed to parse simulation transactionData XDR");
+                        None
+                    }
+                },
+                None => None,
+            };
+
+            let auth = sim_res.results.as_ref().and_then(|results| {
+                results.first().and_then(|entry| {
+                    entry.auth.as_ref().map(|auth_strs| {
+                        auth_strs
+                            .iter()
+                            .filter_map(|s| {
+                                SorobanAuthorizationEntry::from_xdr_base64(s, Limits::none()).ok()
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                })
+            });
+
+            // 3. Assemble finalized envelope with resource fee and Soroban transaction data
             let total_fee = 100 + resource_fee;
             let (_final_envelope, final_xdr) = PayoutTxBuilder::build_and_sign_envelope(
                 &self.signing_key,
@@ -119,6 +185,8 @@ impl SubmitPipeline {
                 proof_hash,
                 sequence,
                 total_fee,
+                soroban_data,
+                auth,
             )
             .map_err(|e| PipelineError::Builder(e.to_string()))?;
 
@@ -152,6 +220,8 @@ impl SubmitPipeline {
                 "ERROR" => {
                     let err_msg = send_res
                         .error_result_xdr
+                        .as_deref()
+                        .map(parse_error_result_xdr)
                         .unwrap_or_else(|| "Submission rejected with status ERROR".into());
                     return Ok(SubmitResult::Failed {
                         tx_hash: Some(tx_hash),
@@ -212,13 +282,16 @@ mod tests {
     async fn test_pipeline_happy_path_confirmation() {
         let server = MockServer::start().await;
 
-        // Mock simulateTransaction -> success
+        // Mock simulateTransaction -> success with transactionData
         Mock::given(method("POST"))
             .and(path("/"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": 1,
-                "result": { "minResourceFee": "200" }
+                "result": {
+                    "minResourceFee": "200",
+                    "transactionData": "AAAAAAAAAAAAAAAAAAAD6AAAAGQAAABkAAAAAAAAAGQ="
+                }
             })))
             .up_to_n_times(1)
             .mount(&server)
@@ -377,5 +450,13 @@ mod tests {
                 tx_hash: "tx_slow_123".into()
             }
         );
+    }
+
+    #[test]
+    fn test_parse_error_result_xdr_tx_malformed() {
+        let raw_xdr = "AAAAAAAAAAD////wAAAAAA==";
+        let parsed = parse_error_result_xdr(raw_xdr);
+        assert!(parsed.contains("txMALFORMED"));
+        assert!(parsed.contains("malformed transaction envelope"));
     }
 }

@@ -63,6 +63,7 @@ pub struct SimulateTransactionResponse {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct SimulateResultEntry {
     pub xdr: Option<String>,
+    pub auth: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
