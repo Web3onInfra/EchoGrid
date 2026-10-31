@@ -47,7 +47,7 @@ anyhow    = "1"
 # ── State, Time & Persistence ────────────────────────────────────────────────
 chrono      = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
-rusqlite    = { version = "0.32", features = ["bundled"] }
+rusqlite    = { version = "0.41", features = ["bundled"] }
 
 [dev-dependencies]
 wiremock = "0.6"
