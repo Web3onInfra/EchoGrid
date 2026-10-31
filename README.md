@@ -10,41 +10,12 @@
 
 > *"To balance the grid in Ghana, we don't need millions of dollars in imported smart meters. We just need to listen."*
 
-EchoGrid replaces expensive IoT smart meters with the microphone on ubiquitous smartphones. Local Edge AI detects the distinct low-frequency acoustic signature of heavy appliances (air conditioners, water pumps, refrigeration compressors). When the grid is strained, a municipal authority funds a Soroban smart contract bounty on Stellar. Users are challenged to power down. If the local client detects the sudden absence of the appliance hum, it generates a cryptographic **Proof of Power-Down**, which a Rust oracle verifies before triggering an autonomous Stellar micropayment.
-
 ---
 
-## 📖 About EchoGrid
-
-### The Challenge
-In rapidly developing power grids across emerging markets (such as Ghana's national grid), peak demand spikes trigger brownouts and rolling blackouts (*dumsor*), stressing regional substations and forcing costly reliance on emergency diesel peaking plants. Traditional automated demand-response solutions mandate imported smart meters ($150–$300+ per household), which presents an insurmountable barrier for widespread residential adoption.
-
-### The Solution: Acoustic NegaWatts
-A **NegaWatt** is a unit of power saved rather than generated. EchoGrid transforms demand-response into an accessible consumer micro-economy with zero hardware cost:
-- **Zero-Hardware Sensing**: Leverages ubiquitous smartphone microphones to listen for the distinct acoustic signature (50/60 Hz mains hum and mechanical harmonics) of heavy inductive appliances.
-- **Strict Edge Privacy**: Audio processing is performed 100% locally in-browser via Web Audio API and Web Workers. Raw sound never leaves the device.
-- **Smart Escrows on Soroban**: Municipalities and grid operators deposit USDC bounty pools into automated Soroban smart contracts.
-- **Instant Stellar Settlement**: Verifiable appliance power-downs yield an instant, non-custodial Stellar Testnet payout to the user's wallet via Freighter or browser keypair.
-
----
-
-## 📑 Table of Contents
-
-- [About EchoGrid](#-about-echogrid)
-- [Live Deployments & Network Details](#-live-deployments--network-details)
-- [Monorepo Architecture](#-monorepo-architecture)
-- [System Architecture Flow](#-system-architecture-flow)
-- [Privacy & Security Model](#-privacy--security-model)
-- [Quick Start Guide](#-quick-start-guide)
-  - [Prerequisites](#prerequisites)
-  - [1. Soroban Smart Contract (Phase 1)](#1-soroban-smart-contract-phase-1)
-  - [2. Rust Oracle Service (Phase 2)](#2-rust-oracle-service-phase-2)
-  - [3. Mobile Web PWA Client (Phase 3)](#3-mobile-web-pwa-client-phase-3)
-  - [4. Acoustic Hum Research & DSP (Phase 0)](#4-acoustic-hum-research--dsp-phase-0)
-  - [5. Acoustic CLI Prototype](#5-acoustic-cli-prototype)
-- [Testing & Quality Assurance](#-testing--quality-assurance)
-- [Documentation & Runbooks](#-documentation--runbooks)
-- [License](#-license)
+> [!IMPORTANT]
+> **Honest Framing & Trust Model**
+>
+> The EchoGrid MVP trusts the client's claim of an appliance power-down. While cryptographic challenge nonces, recipient cooldowns, and on-chain spending caps strictly limit potential abuse, they do not prove that an appliance physically turned off. This live demonstration showcases the end-to-end micropayment loop and real-time acoustic detection user experience on Stellar Testnet; physical and cryptographic verification remains post-MVP work.
 
 ---
 
@@ -55,268 +26,205 @@ EchoGrid is deployed and operational on the **Stellar Testnet**:
 | Component | Target / Environment | URL / Identifier |
 | :--- | :--- | :--- |
 | **PWA Web Client** | Vercel Production | [https://echogrid-pwa.vercel.app](https://echogrid-pwa.vercel.app) |
-| **Soroban Smart Contract** | Stellar Testnet | [`CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF`](https://stellar.expert/explorer/testnet/contract/CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF) |
-| **Testnet Token (USDC)** | Stellar Testnet Asset | [`CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`](https://stellar.expert/explorer/testnet/contract/CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC) |
-| **Oracle Service** | Fly.io / Docker | REST API with Axum + SQLite WAL + Prometheus |
+| **Live Oracle Health** | Fly.io Microservice | [`GET https://echogrid-oracle.fly.dev/api/v1/health`](https://echogrid-oracle.fly.dev/api/v1/health) |
+| **Live Oracle Readiness** | Fly.io Self-Check Probe | [`GET https://echogrid-oracle.fly.dev/api/v1/ready`](https://echogrid-oracle.fly.dev/api/v1/ready) |
+| **Soroban Smart Contract** | Stellar Testnet Escrow | [`CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF`](https://stellar.expert/explorer/testnet/contract/CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF) |
+| **Testnet Token (USDC)** | Stellar SAC Asset | [`CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`](https://stellar.expert/explorer/testnet/contract/CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC) |
+| **Confirmed Payout Tx** | Testnet Settlement Example | [`4e8e6154ba3cae2c8e815b7067750cdb4178ab9ba70ad57aa834846185936506`](https://stellar.expert/explorer/testnet/tx/4e8e6154ba3cae2c8e815b7067750cdb4178ab9ba70ad57aa834846185936506) |
 | **OpenAPI Specification** | Oracle Documentation | [docs/api/openapi.yaml](docs/api/openapi.yaml) |
 
 Contract details, deployment transaction hashes, and public keys are tracked in [`deployments/testnet.json`](deployments/testnet.json).
 
 ---
 
-## 📁 Monorepo Architecture
+## 🏗️ Architecture & Data Flow
 
-```
-EchoGrid/
-├── contracts/
-│   └── negawatt_escrow/       # Phase 1: Soroban Smart Contract (Rust / no_std)
-│       ├── src/lib.rs          # Escrow logic, AgentGuard RBAC, replay protection
-│       └── Cargo.toml
-├── oracle/                    # Phase 2: Rust Oracle & Settlement Daemon (Axum)
-│   ├── src/                   # REST routes, Stellar Horizon client, submission queue
-│   ├── Cargo.toml
-│   └── .env.example
-├── app/                       # Phase 3: Mobile PWA Client (React + Vite + TypeScript)
-│   ├── src/                   # Web Audio DSP, streaming detector, wallet adapter
-│   ├── scripts/smoke-test.js  # Automated production health and asset verifier
-│   ├── vercel.json            # Strict CSP, security headers & SPA routing
-│   ├── package.json
-│   └── README.md              # Detailed PWA user and operator guide
-├── research/                  # Phase 0: Acoustic Hum Detection & Research
-│   └── hum_detection/         # Python DSP models, STFT analysis, golden vectors
-├── acoustic_cli/              # Prototype: Standalone Edge AI CLI (Rust)
-│   └── src/main.rs
-├── deployments/               # Network addresses, contract IDs, and deployment hashes
-│   └── testnet.json           # Live Stellar Testnet configuration
-├── docs/                      # Architectural specs, phase exit reports & runbooks
-│   ├── api/openapi.yaml       # Oracle OpenAPI v3 specification
-│   ├── phase0/                # Recording protocols, ADRs, dataset decisions
-│   ├── phase1/                # Smart contract design and interface specs
-│   ├── phase2/                # Oracle design, security audit, operator runbook
-│   └── phase3/                # PWA design, device matrix, Phase 3 Exit Report
-├── justfile                   # Task runner for research and operational commands
-├── fly.toml                   # Fly.io deployment manifest for Oracle
-├── vercel.json                # Root Vercel deployment configuration
-└── Cargo.toml                 # Rust workspace root (oracle + acoustic_cli)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as Mobile PWA Client<br/>(Web Audio DSP)
+    participant Oracle as Rust Oracle Service<br/>(Axum + SQLite WAL)
+    participant Contract as Soroban Escrow<br/>(Stellar Testnet)
+    participant Ledger as Stellar Ledger
+
+    Note over App: 1. User listens to appliance mains hum (50/60 Hz harmonics)
+    App->>Oracle: GET /api/v1/challenge?wallet=G...
+    Oracle-->>App: { challenge_id, nonce, expires_at }
+    
+    Note over App: 2. Appliance shuts down; Web Worker FFT detects hum drop
+    Note over App: 3. ProofBuilder hashes pre-image with challenge nonce
+    App->>Oracle: POST /api/v1/proof<br/>{ wallet, challenge_id, proof_v1 }
+    
+    Note over Oracle: 4. Oracle verifies nonce, rate limits, and cooldowns
+    Oracle->>Contract: Invoke payout(recipient, proof_hash)
+    Contract->>Ledger: Transfer 1.0 USDC from escrow pool to recipient
+    Ledger-->>Contract: Transaction finalized
+    Contract-->>Oracle: Emit 'negawatt_payout' event + tx_hash
+    Oracle-->>App: { status: "confirmed", tx_hash: "0x..." }
+    Note over App: 5. Displays receipt with StellarExpert link
 ```
 
 ---
 
-## 🔄 System Architecture Flow
+## 🔍 What's Real vs. Mocked
 
-```
-   +-------------------------------------------------------+
-   |                  Mobile Smartphone                    |
-   |                                                       |
-   |  [Microphone]                                         |
-   |        │                                              |
-   |        ▼ (Web Audio API / RingBuffer - No Audio Sent) |
-   |  [In-Browser Web Worker FFT]                          |
-   |        │                                              |
-   |        ▼ (50/60 Hz Mains Hum & Harmonic Drop Ratio)   |
-   |  [StreamingPowerDownDetector]                         |
-   |        │                                              |
-   |        ▼ (appliance powered down during grid strain)  |
-   |  [Proof Builder]                                      |
-   +--------│----------------------------------------------+
-            │
-            │ HTTPS POST /api/v1/proof
-            │ (Canonical JSON pre-image + challenge nonce, ~440 bytes)
-            ▼
-   +-------------------------------------------------------+
-   |                EchoGrid Rust Oracle                   |
-   |                                                       |
-   |  1. Validate challenge window, nonce, & rate-limits   |
-   |  2. Verify spectral drop latency and energy ratios    |
-   |  3. Deduplicate SHA-256 pre-image hash (replay guard) |
-   |  4. Enqueue atomic payout transaction                 |
-   +--------│----------------------------------------------+
-            │
-            │ Ed25519 Signed Soroban Invocation (`payout`)
-            ▼
-   +-------------------------------------------------------+
-   |            Soroban Negawatt Escrow Contract           |
-   |                                                       |
-   |  1. require_auth() — Stellar Ed25519 protocol check   |
-   |  2. Replay check — writes proof hash to storage       |
-   |  3. Rate check — verifies recipient & global quotas   |
-   |  4. Releases USDC bounty from municipal escrow pool   |
-   +--------│----------------------------------------------+
-            │
-            │ Autonomous Token Transfer
-            ▼
-   +───────────────────────────────────────────────────────+
-   |              User Stellar Wallet Address              |
-   |            (Freighter Extension / Keypair)            |
-   +───────────────────────────────────────────────────────+
-```
+Per our canonical trust specification in [`docs/trust-model.md`](docs/trust-model.md):
+
+| Category | Component / Feature | Current Implementation Status |
+| :--- | :--- | :--- |
+| **Real** | **Soroban Escrow on Testnet** | Contract [`CDFOK4NF4CY...`](https://stellar.expert/explorer/testnet/contract/CDFOK4NF4CY27N4G5PYA6SXTJA5MEKPVU7DQRMJUS74LIXHOKYNRHOPF) enforces caps, daily budgets, replay guards, and issues token payouts. |
+| **Real** | **Live Rust Oracle Daemon** | Axum service on Fly.io ([`echogrid-oracle.fly.dev`](https://echogrid-oracle.fly.dev)) with SQLite WAL store, challenge nonces, and serialized queue submission. |
+| **Real** | **Testnet Payouts** | Automated token transfers on Stellar Testnet for valid proof submissions. |
+| **Real** | **Microphone Capture & DSP** | Web Audio API + Web Worker Cooley-Tukey Radix-2 FFT detects 50/60 Hz appliance hum drop-offs in real time. |
+| **Mocked** | **Grid Strain Data** | Grid conditions (Green / Amber / Red / Emergency) are simulated client-side (`GridView.tsx`) without live utility SCADA integration. |
+| **Mocked** | **Simulator-Mode Claims** | A toggleable demo simulator injects synthetic hum waveforms; claims carry `simulation: true` per the Phase 2 oracle policy. |
+| **Not Built Yet** | **Hardware / Watermark Verification** | Smart-plug telemetry, acoustic watermarking, or physical shutdown proofs. |
+| **Not Built Yet** | **Coarse Geofencing** | IP or cellular proximity attestation verifying claimant location within the strained substation zone. |
+| **Not Built Yet** | **Native On-Device ML** | Quantized models (TFLite/ONNX) for multi-appliance acoustic fingerprinting. |
+| **Not Built Yet** | **Decentralized Oracles** | Multi-party consensus, threshold signatures, or slashing mechanisms. |
+| **Not Built Yet** | **Utility SCADA / OpenADR** | Automated OpenADR 2.0b integration with electric utility dispatch centers. |
+| **Not Built Yet** | **Mainnet Deployment** | Production tokenomics, real fiat collateral, and third-party security audits. |
 
 ---
 
-## 🔒 Privacy & Security Model
+## 🔒 Acoustic Privacy Statement
 
-EchoGrid is designed around strict trust-minimization and privacy guarantees:
+**Audio never leaves your device.** 
 
-1. **Zero Raw Audio Buffers Sent**:
-   - Audio captured via the browser's Web Audio API is processed strictly in-memory inside client Web Workers.
-   - Proof payloads consist exclusively of scalar feature metrics, timing latencies, detector version hashes, and cryptographic nonces (~440 bytes).
-   - Zero raw audio buffers or recordings are ever transmitted across the network or stored.
-2. **Untrusted Client Architecture**:
-   - The Oracle and Soroban smart contract treat all client inputs as untrusted.
-   - Payout transactions are authenticated using protocol-level `Address.require_auth()` signed by the Oracle keypair.
-3. **AgentGuard On-Chain RBAC**:
-   - `ROLE_MUNICIPALITY`: Authorized to initialize escrow, deposit bounty liquidity, and update bounty parameters.
-   - `ROLE_ORACLE`: Restricted exclusively to invoking the `payout` endpoint with valid proofs.
-4. **Replay & Rate-Limiting Protection**:
-   - Every submitted Proof-of-Power-Down hash is written to persistent contract storage. Re-submitting an existing hash panics on-chain.
-   - Sliding-window rate limiters cap maximum payouts per user address and per hour to safeguard municipality funds.
-5. **Strict Testnet Quarantine**:
-   - Hard-coded checks verify the network passphrase (`Test SDF Network ; September 2015`). Payouts and testnet faucets are disabled if connected to mainnet.
+EchoGrid operates with a strict zero-knowledge acoustic privacy policy:
+- Audio captured via the smartphone microphone is processed entirely in volatile memory within client Web Workers using standard Web Audio API interfaces.
+- No raw audio waveforms, PCM audio buffers, spectrogram images, or audio recordings are ever written to disk, buffered in cookies/local storage, or transmitted across the network.
+- Outgoing proof payloads (`Proof of Power-Down v1`) consist exclusively of scalar mathematical features: band signal-to-noise ratios, timestamp delta measurements, detector version hashes, and cryptographic challenge nonces.
 
 ---
 
 ## 🚀 Quick Start Guide
 
-### Prerequisites
+### 1. Web App PWA (Mock / Local Mode)
 
-- **Rust**: `1.80+` with `wasm32-unknown-unknown` target:
-  ```bash
-  rustup target add wasm32-unknown-unknown
-  ```
-- **Soroban CLI**: `cargo install --locked soroban-cli`
-- **Node.js**: `v20+` and `npm`
-- **Python**: `3.11+` with `uv` (for Phase 0 research tools)
-
----
-
-### 1. Soroban Smart Contract (Phase 1)
+Run the client application locally in mock mode without needing a microphone or external backend:
 
 ```bash
-cd contracts/negawatt_escrow
-
-# Run the in-process unit tests
-cargo test
-
-# Build WASM bytecode
-cargo build --target wasm32-unknown-unknown --release
-
-# Optimize binary size for deployment
-soroban contract optimize --wasm target/wasm32-unknown-unknown/release/negawatt_escrow.wasm
-```
-
----
-
-### 2. Rust Oracle Service (Phase 2)
-
-```bash
-cd oracle
-
-# Copy environment template
-cp .env.example .env
-
-# Run unit and integration tests
-cargo test
-
-# Start the local development server (binds to http://localhost:8080)
-cargo run
-```
-
-Production deployment to Fly.io:
-```bash
-# Provision volume & deploy
-fly volumes create echogrid_data --size 1
-fly secrets set ORACLE_SECRET_KEY="S..."
-just deploy-fly
-```
-For complete production operations, see the [Phase 2 Operator Runbook](docs/phase2/operator-runbook.md).
-
----
-
-### 3. Mobile Web PWA Client (Phase 3)
-
-```bash
+# 1. Install dependencies
 cd app
+npm ci
 
-# Install dependencies
-npm install
-
-# Start local Vite development server (http://localhost:5173)
+# 2. Start Vite development server
 npm run dev
 
-# Run comprehensive test suite
-npm run typecheck
-npm run lint
-npm test
-
-# Build production bundle and inspect bundle budgets
-npm run build
-npm run size
-
-# Run automated smoke test against local or remote origin
-node scripts/smoke-test.js http://localhost:5173 --skip-oracle
+# 3. Open browser at http://localhost:5173
+# In the Monitor tab, toggle "Simulator Mode" to run synthetic hum drop-off claims.
 ```
 
-For mobile home-screen installation instructions (iOS & Android) and the audio simulator walkthrough, see the [EchoGrid App Guide](app/README.md).
-
----
-
-### 4. Acoustic Hum Research & DSP (Phase 0)
-
-The research harness verifies frequency extraction algorithms, golden test vectors, and acoustic recordings of appliances:
+### 2. Rust Oracle Service (Local Development)
 
 ```bash
-# Run pytest on the signal processing suite
-just test
+# 1. Run all workspace tests (75 offline unit & security tests)
+cargo test --workspace
 
-# Generate spectral analysis reports
-just report
-
-# Run detector evaluation benchmark
-just eval
+# 2. Launch oracle service in local mock mode
+cargo run -p echogrid-oracle
 ```
 
 ---
 
-### 5. Acoustic CLI Prototype
+## 📡 API Quickstart
 
-A standalone command-line prototype for running the detector directly against local hardware audio inputs:
+### 1. Request a Challenge Nonce
 
 ```bash
-cd acoustic_cli
-cargo run -- --wallet GABC1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234 --challenge-id ch_001
+curl -s "https://echogrid-oracle.fly.dev/api/v1/challenge?wallet=GA4ZH5HAQ77O2KGZJE2PJ5B4FMKVDGWZUZI7HVLTXPTPCEQGXXLDEHXT"
+```
+
+**Success Response (HTTP 200):**
+```json
+{
+  "challenge_id": "ch_5f8a1b2c3d4e",
+  "nonce": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "expires_at": 1730352000,
+  "ttl_seconds": 120
+}
+```
+
+### 2. Submit Proof-of-Power-Down
+
+```bash
+curl -s -X POST "https://echogrid-oracle.fly.dev/api/v1/proof" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "wallet_address": "GA4ZH5HAQ77O2KGZJE2PJ5B4FMKVDGWZUZI7HVLTXPTPCEQGXXLDEHXT",
+    "challenge_id": "ch_5f8a1b2c3d4e",
+    "simulation": true,
+    "proof": {
+      "version": "v1",
+      "baseline_energy_db": -24.5,
+      "event_energy_db": -55.2,
+      "energy_drop_db": 30.7,
+      "delta_ms": 1200,
+      "pre_drop_snr": 18.4,
+      "post_drop_snr": 1.2,
+      "detector_version": "0.1.0"
+    }
+  }'
+```
+
+**Success Response (HTTP 200):**
+```json
+{
+  "claim_id": "claim_9b8c7d6e5f4a",
+  "status": "confirmed",
+  "bounty_stroops": 10000000,
+  "tx_hash": "4e8e6154ba3cae2c8e815b7067750cdb4178ab9ba70ad57aa834846185936506",
+  "explorer_url": "https://stellar.expert/explorer/testnet/tx/4e8e6154ba3cae2c8e815b7067750cdb4178ab9ba70ad57aa834846185936506",
+  "simulated": true
+}
+```
+
+**Cooldown Active Error (HTTP 429):**
+```json
+{
+  "error": "COOLDOWN_ACTIVE",
+  "message": "Wallet must wait 600 seconds between successive claims",
+  "retry_after_seconds": 450
+}
 ```
 
 ---
 
-## 🧪 Testing & Quality Assurance
+## 🔬 Research & DSP Reproducibility
 
-EchoGrid enforces multi-layer verification across every tier:
+Phase 0 acoustic hum research and Python DSP model prototypes are located under `research/hum_detection`.
 
-- **100% Golden Parity**: The TypeScript detector (`app/src/detector/detector.ts`) achieves identical classification outputs to the Phase 0 Python reference implementation against `research/hum_detection/golden_vectors.json`.
-- **E2E Playwright Suite**: Chromium tests run with `--use-file-for-fake-audio-capture` to simulate real acoustic appliance power-down transitions in end-to-end tests.
-- **Accessibility**: 100/100 automated axe-core audits and WCAG 2.1 AA compliance across all application views.
-- **Production Smoke Verification**: `app/scripts/smoke-test.js` continuously validates live web assets, service worker manifests, CSP headers, and CORS preflight responses.
+### Reproducing Acoustic Research Tests
 
----
+```bash
+# 1. Navigate to research workspace
+cd research/hum_detection
 
-## 📚 Documentation & Runbooks
+# 2. Run test suite using uv or the pre-configured virtual environment
+uv run pytest
+# Alternatively with Python:
+# python -m pytest tests/
+```
 
-- **PWA Guide & Device Setup**: [`app/README.md`](app/README.md)
-- **Phase 3 Exit Report**: [`docs/phase3/EXIT.md`](docs/phase3/EXIT.md)
-- **Phase 3 Physical Device Matrix**: [`docs/phase3/device-test-matrix.md`](docs/phase3/device-test-matrix.md)
-- **Phase 2 Operator Runbook**: [`docs/phase2/operator-runbook.md`](docs/phase2/operator-runbook.md)
-- **Phase 2 Security Findings & Audit**: [`docs/phase2/security-findings.md`](docs/phase2/security-findings.md)
-- **Oracle REST OpenAPI Spec**: [`docs/api/openapi.yaml`](docs/api/openapi.yaml)
-- **Phase 1 Smart Contract Interface**: [`docs/phase1/contract-interface.md`](docs/phase1/contract-interface.md)
-- **Phase 0 Acoustic Feasibility Report**: [`docs/phase0/README.md`](docs/phase0/README.md)
+Expected output: `22 passed` verifying SciPy STFT, band SNR ratios, streaming detector thresholds, and golden parity vectors against TypeScript ports.
 
 ---
 
-## 📄 License
+## 🗺️ Roadmap & Milestone Status
 
-Licensed under either of:
+| Phase | Milestone | Description | Status |
+| :--- | :--- | :--- | :---: |
+| **Phase 0** | **Research Spike** | Acoustic STFT research, golden vectors, Soroban RPC client spike | `COMPLETE` |
+| **Phase 1** | **Smart Contract** | Hardened `negawatt_escrow` Soroban contract on Stellar Testnet | `COMPLETE` |
+| **Phase 2** | **Live Oracle** | Rust Axum daemon, SQLite WAL, cooldowns, caps, and Fly.io deployment | `COMPLETE` |
+| **Phase 3** | **Mobile PWA** | Client PWA, Web Audio DSP, Freighter/demo wallet, Vercel hosting | `COMPLETE` |
+| **Phase 4** | **Ship & Polish** | Unified CI, uptime monitor, trust disclosures, demo video, README rewrite | `IN PROGRESS` |
+| **Phase 5** | **Post-MVP** | Hardware watermarking, coarse geofencing, multi-oracle consensus, Mainnet | `PLANNED` |
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE) or http://opensource.org/licenses/MIT)
+---
 
-at your option.
+## 📜 License & Contributions
+
+- Dual-licensed under [MIT](LICENSE) or [Apache 2.0](LICENSE).
+- Contributions follow [Conventional Commits](https://www.conventionalcommits.org) and require all unified CI checks (`ci-ok`) to pass.
