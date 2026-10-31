@@ -30,7 +30,7 @@ stellar-xdr     = { version = "22.0.0", features = ["curr", "std", "base64"] }
 stellar-strkey  = "1.0.0"
 
 # ── HTTP Client & RPC ────────────────────────────────────────────────────────
-reqwest         = { version = "0.12", features = ["json"] }
+reqwest         = { version = "0.13", features = ["json"] }
 
 # ── Observability ────────────────────────────────────────────────────────────
 tracing             = "0.1"
