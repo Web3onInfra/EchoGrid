@@ -197,11 +197,14 @@ jobs:
         run: npm run build
 
   link-check:
-    name: Link Check
+    name: Link Check & Trust Model Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Check Canonical Trust Statement Drift
+        run: bash scripts/check_trust_statement.sh
 
       - name: Lychee Link Checker
         uses: lycheeverse/lychee-action@v2
