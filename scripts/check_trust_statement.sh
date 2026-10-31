@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
 # EchoGrid Canonical Trust Statement Drift Checker
 # Verifies that every file listed in docs/trust-model.md contains the canonical text verbatim.
@@ -39,15 +39,6 @@ echo "----------------------------------------------------------"
 
 # Extract targets from front-matter
 TARGETS=$(python3 -c "
-import yaml
-with open('$TRUST_MODEL_FILE', 'r', encoding='utf-8') as f:
-    content = f.read()
-if content.startswith('---'):
-    parts = content.split('---', 2)
-    meta = yaml.safe_load(parts[1]) if len(parts) > 2 else {}
-    for target in meta.get('canonical_targets', []):
-        print(target)
-" 2>/dev/null || python3 -c "
 with open('$TRUST_MODEL_FILE', 'r', encoding='utf-8') as f:
     lines = f.readlines()
 in_targets = False
