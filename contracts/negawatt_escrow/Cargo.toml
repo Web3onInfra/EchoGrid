@@ -11,12 +11,12 @@ crate-type = ["cdylib"]   # Required for Soroban: compiled to a .wasm shared lib
 [dependencies]
 # soroban-sdk provides the entire Soroban contract API:
 #   Env, Symbol, Map, token client, auth, events, etc.
-soroban-sdk = { version = "21.0.0", features = ["alloc"] }
+soroban-sdk = { version = "29.0.1", features = ["alloc"] }
 
 [dev-dependencies]
 # soroban-sdk's test utilities give us an in-process contract sandbox
 # with multi-contract invocation, ledger mocking, and auth simulation.
-soroban-sdk = { version = "21.0.0", features = ["testutils", "alloc"] }
+soroban-sdk = { version = "29.0.1", features = ["testutils", "alloc"] }
 
 [profile.release]
 # Optimise heavily for .wasm size — judges download from testnet!
