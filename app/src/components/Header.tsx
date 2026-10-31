@@ -1,8 +1,12 @@
 import React from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Sun, Moon, Zap } from 'lucide-react';
+import { Sun, Moon, Zap, Info } from 'lucide-react';
 
-export const Header: React.FC = () => {
+export interface HeaderProps {
+  onOpenAbout?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onOpenAbout }) => {
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -26,6 +30,17 @@ export const Header: React.FC = () => {
           <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse motion-reduce:animate-none" />
           Testnet
         </span>
+
+        {onOpenAbout && (
+          <button
+            onClick={onOpenAbout}
+            aria-label="About and how it works"
+            data-testid="about-button"
+            className="touch-target flex items-center justify-center p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+          >
+            <Info className="w-5 h-5" />
+          </button>
+        )}
 
         <button
           onClick={toggleTheme}
