@@ -26,7 +26,7 @@ ed25519-dalek   = { version = "2.1", features = ["rand_core"] }
 getrandom       = "0.2"
 
 # ── Stellar / Soroban SDK & XDR ──────────────────────────────────────────────
-stellar-xdr     = { version = "22.0.0", features = ["curr", "std", "base64"] }
+stellar-xdr     = { version = "26.0.1", features = ["curr", "std", "base64"] }
 stellar-strkey  = "1.0.0"
 
 # ── HTTP Client & RPC ────────────────────────────────────────────────────────
