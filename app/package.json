@@ -5,13 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && node --max-old-space-size=4096 --max-semi-space-size=64 ./node_modules/vite/bin/vite.js build",
+    "build": "tsc && node --max-old-space-size=4096 ./node_modules/vite/bin/vite.js build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "test": "node --max-old-space-size=4096 --max-semi-space-size=64 ./node_modules/vitest/vitest.mjs run",
+    "test": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "node --max-old-space-size=4096 --max-semi-space-size=64 ./node_modules/@playwright/test/cli.js test",
+    "test:e2e": "node --max-old-space-size=4096 ./node_modules/@playwright/test/cli.js test",
     "size": "node scripts/check-size.js",
     "smoke": "node scripts/smoke-test.js"
   },
