@@ -114,6 +114,7 @@ pub async fn request_id_and_tracing_middleware(mut req: Request, next: Next) -> 
     req.headers_mut()
         .insert(HeaderName::from_static("x-request-id"), header_val.clone());
 
+    let start = std::time::Instant::now();
     let method = req.method().clone();
     let uri = req.uri().path().to_string();
 
@@ -126,6 +127,18 @@ pub async fn request_id_and_tracing_middleware(mut req: Request, next: Next) -> 
 
     use tracing::Instrument;
     let mut resp = next.run(req).instrument(span).await;
+    let latency_ms = start.elapsed().as_millis() as u64;
+    let status = resp.status().as_u16();
+
+    tracing::info!(
+        request_id = %req_id,
+        method = %method,
+        path = %uri,
+        status = status,
+        latency_ms = latency_ms,
+        "access_log"
+    );
+
     resp.headers_mut()
         .insert(HeaderName::from_static("x-request-id"), header_val);
     resp
@@ -601,5 +614,72 @@ mod tests {
             .unwrap();
         let resp_forbidden = app_proxy.oneshot(req_external).await.unwrap();
         assert_eq!(resp_forbidden.status(), StatusCode::FORBIDDEN);
+    }
+
+    static TEST_LOG_BUFFER: std::sync::Mutex<Vec<u8>> = std::sync::Mutex::new(Vec::new());
+    static INIT_TEST_TRACING: std::sync::Once = std::sync::Once::new();
+
+    #[tokio::test]
+    async fn test_access_log_emission_and_secret_redaction() {
+        use std::io::Write;
+
+        #[derive(Clone)]
+        struct StaticBufferWriter;
+        impl Write for StaticBufferWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                if let Ok(mut lock) = TEST_LOG_BUFFER.lock() {
+                    lock.extend_from_slice(buf);
+                }
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for StaticBufferWriter {
+            type Writer = StaticBufferWriter;
+            fn make_writer(&'a self) -> Self::Writer {
+                StaticBufferWriter
+            }
+        }
+
+        INIT_TEST_TRACING.call_once(|| {
+            let subscriber = tracing_subscriber::fmt()
+                .with_writer(StaticBufferWriter)
+                .with_ansi(false)
+                .with_max_level(tracing::Level::INFO)
+                .finish();
+            let _ = tracing::subscriber::set_global_default(subscriber);
+        });
+
+        TEST_LOG_BUFFER.lock().unwrap().clear();
+
+        let state = test_app_state(vec!["*".to_string()]);
+        let app = build_app(state);
+
+        let sensitive_token = "s3cr3t_auth_bearer_token_xyz999";
+        let sensitive_payload = "confidential_proof_raw_data_abc";
+
+        let req = Request::builder()
+            .uri("/api/v1/health")
+            .header("authorization", format!("Bearer {}", sensitive_token))
+            .header("x-secret-key", sensitive_token)
+            .body(Body::from(sensitive_payload))
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let logs = String::from_utf8(TEST_LOG_BUFFER.lock().unwrap().clone()).unwrap();
+        assert!(logs.contains("access_log"), "Logs must contain access_log event: got '{}'", logs);
+        assert!(logs.contains("method=GET") || logs.contains("method=\"GET\""), "Logs must contain method");
+        assert!(logs.contains("path=/api/v1/health") || logs.contains("path=\"/api/v1/health\""), "Logs must contain path");
+        assert!(logs.contains("status=200"), "Logs must contain HTTP status 200");
+        assert!(logs.contains("request_id="), "Logs must contain request_id");
+        assert!(logs.contains("latency_ms="), "Logs must contain latency_ms");
+
+        // Verify secrets and request bodies are NEVER logged
+        assert!(!logs.contains(sensitive_token), "Sensitive auth tokens must NOT appear in access logs");
+        assert!(!logs.contains(sensitive_payload), "Payload bodies must NOT appear in access logs");
     }
 }

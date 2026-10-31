@@ -125,3 +125,26 @@ fly volumes create echogrid_data --snapshot-id <snapshot-id> --size 1
 # Validate database file integrity within container
 fly ssh console -C "sqlite3 /data/echogrid.db 'PRAGMA integrity_check;'"
 ```
+
+
+---
+
+## 7. Structured Access Logging & Redaction Policy
+
+Every incoming HTTP request processed by the Axum server emits exactly one structured access log event (`access_log`) via `tracing`.
+
+### 7.1 Access Log Field Schema
+
+| Field Name | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `request_id` | `String` | Correlation identifier injected or propagated via `x-request-id` | `"req_7f9c2d1b8e4a"` |
+| `method` | `String` | HTTP request method | `"GET"`, `"POST"` |
+| `path` | `String` | URI request path excluding query strings | `"/api/v1/proof"` |
+| `status` | `u16` | HTTP status code returned to the client | `200`, `400`, `429`, `503` |
+| `latency_ms` | `u64` | Processing latency in milliseconds | `4` |
+
+### 7.2 Strict Redaction Guarantees
+
+1. **No Secret Tokens**: Authorization headers (`Authorization: Bearer ...`, `x-secret-key`, `ORACLE_SECRET_KEY`) are stripped and never recorded in log fields or messages.
+2. **No Raw Proof Payloads**: Neither raw request bodies nor full proof pre-image JSON objects appear in access logs.
+3. **No Private Keys**: Ed25519 seed bytes and private signing keys are held in zeroized memory via `secrecy::SecretString` and are excluded from all logging and error formatters.
