@@ -1,0 +1,95 @@
+name: Oracle Live Uptime Monitor
+
+# NOTE: GitHub Actions automatically disables scheduled workflows on public
+# repositories after 60 consecutive days of repository inactivity (no commits).
+# When this happens, visiting the Actions tab and manually enabling or triggering
+# the workflow will resume the schedule.
+
+on:
+  schedule:
+    # Run every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  uptime-check:
+    name: Check Oracle Health & Ready
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Live Oracle /health
+        id: ping_health
+        run: |
+          HEALTH_URL="https://echogrid-oracle.fly.dev/api/v1/health"
+          echo "Pinging ${HEALTH_URL}..."
+          HTTP_CODE=$(curl -s -o health_resp.json -w "%{http_code}" "${HEALTH_URL}" || echo "000")
+          cat health_resp.json || true
+          echo ""
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "Health check failed with HTTP ${HTTP_CODE}"
+            echo "error=HTTP ${HTTP_CODE} on /health" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          STATUS=$(jq -r '.status // empty' health_resp.json)
+          if [ "${STATUS}" != "ok" ]; then
+            echo "Health status degraded: ${STATUS}"
+            echo "error=Status not ok: ${STATUS}" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "Health check PASSED."
+
+      - name: Ping Live Oracle /ready
+        id: ping_ready
+        if: success()
+        run: |
+          READY_URL="https://echogrid-oracle.fly.dev/api/v1/ready"
+          echo "Pinging ${READY_URL}..."
+          HTTP_CODE=$(curl -s -o ready_resp.json -w "%{http_code}" "${READY_URL}" || echo "000")
+          cat ready_resp.json || true
+          echo ""
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "Readiness check failed with HTTP ${HTTP_CODE}"
+            echo "error=HTTP ${HTTP_CODE} on /ready" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          RPC_HEALTHY=$(jq -r '.rpc_healthy // false' ready_resp.json)
+          if [ "${RPC_HEALTHY}" != "true" ]; then
+            echo "Soroban RPC unhealthy according to oracle readiness"
+            echo "error=Soroban RPC unhealthy" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "Readiness check PASSED."
+
+      - name: Handle Outage (Create or Update Issue)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_TITLE="Alert: Live Oracle Health/Readiness Check Failure"
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          BODY="### Automated Uptime Alert
+          
+          The scheduled uptime workflow detected a failure while probing the live oracle endpoints at **${TIMESTAMP}**.
+          
+          - **Oracle Health URL:** https://echogrid-oracle.fly.dev/api/v1/health
+          - **Oracle Ready URL:** https://echogrid-oracle.fly.dev/api/v1/ready
+          - **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          Please inspect Fly.io container logs via:
+          \`\`\`bash
+          fly logs -a echogrid-oracle
+          \`\`\`
+          "
+          
+          EXISTING_ISSUE=$(gh issue list --repo "${{ github.repository }}" --search "${ISSUE_TITLE} in:title state:open" --json number --jq '.[0].number')
+          
+          if [ -n "${EXISTING_ISSUE}" ]; then
+            echo "Updating existing issue #${EXISTING_ISSUE}"
+            gh issue comment "${EXISTING_ISSUE}" --repo "${{ github.repository }}" --body "Automated probe still failing at ${TIMESTAMP}. See run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
+            echo "Creating new alert issue"
+            gh issue create --repo "${{ github.repository }}" --title "${ISSUE_TITLE}" --body "${BODY}" --label "bug,ops" || gh issue create --repo "${{ github.repository }}" --title "${ISSUE_TITLE}" --body "${BODY}"
+          fi
