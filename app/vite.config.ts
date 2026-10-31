@@ -4,6 +4,14 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  server: {
+    proxy: {
+      '/api': {
+        target: 'https://echogrid-oracle.fly.dev',
+        changeOrigin: true,
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

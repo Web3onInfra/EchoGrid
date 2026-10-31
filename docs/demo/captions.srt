@@ -1,0 +1,43 @@
+1
+00:00:00,000 --> 00:00:05,000
+When peak electrical demand stresses the municipal grid, EchoGrid incentivizes residents
+
+2
+00:00:05,000 --> 00:00:10,000
+to shed heavy inductive appliance load without expensive smart meters.
+
+3
+00:00:10,000 --> 00:00:16,000
+Users connect a non-custodial Stellar wallet or generate a temporary in-browser keypair
+
+4
+00:00:16,000 --> 00:00:22,000
+funded instantly via Friendbot on Stellar Testnet.
+
+5
+00:00:22,000 --> 00:00:30,000
+Using pure in-browser DSP via Web Audio API and Web Workers, EchoGrid's Edge detector
+
+6
+00:00:30,000 --> 00:00:38,000
+listens for the characteristic acoustic hum of heavy motors and air conditioners. Audio never leaves the device.
+
+7
+00:00:38,000 --> 00:00:44,000
+When the appliance powers off, our streaming detector recognizes the sudden drop in mains frequency harmonics
+
+8
+00:00:44,000 --> 00:00:50,000
+and immediately constructs a cryptographic proof of power-down.
+
+9
+00:00:50,000 --> 00:00:57,000
+The proof is verified by the live Rust oracle against a time-bound challenge nonce.
+
+10
+00:00:57,000 --> 00:01:05,000
+The Soroban escrow contract executes an automated micropayment bounty on Stellar Testnet within seconds.
+
+11
+00:01:05,000 --> 00:01:18,000
+The EchoGrid MVP trusts the client's claim of an appliance power-down. While cryptographic challenge nonces, recipient cooldowns, and on-chain spending caps strictly limit potential abuse, they do not prove that an appliance physically turned off. This live demonstration showcases the end-to-end micropayment loop and real-time acoustic detection user experience on Stellar Testnet; physical and cryptographic verification remains post-MVP work.
