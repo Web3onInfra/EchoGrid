@@ -145,9 +145,35 @@ impl SorobanRpcClient {
 
     pub async fn get_account_sequence(&self, account: &str) -> Result<u64, RpcClientError> {
         let params = serde_json::json!({ "address": account });
-        let result: serde_json::Value = self.call_rpc("getAccount", Some(params)).await?;
+        if let Ok(result) = self.call_rpc::<serde_json::Value, serde_json::Value>("getAccount", Some(params)).await {
+            if let Some(seq) = result
+                .get("sequence")
+                .and_then(|s| {
+                    s.as_str()
+                        .and_then(|str_val| str_val.parse::<u64>().ok())
+                        .or_else(|| s.as_u64())
+                })
+            {
+                return Ok(seq);
+            }
+        }
 
-        result
+        // Fallback: Query Horizon accounts endpoint for account sequence (live Stellar Testnet / Pubnet)
+        let horizon_url = if self.rpc_url.contains("testnet") {
+            "https://horizon-testnet.stellar.org"
+        } else {
+            "https://horizon.stellar.org"
+        };
+        let horizon_endpoint = format!("{}/accounts/{}", horizon_url, account);
+        let resp = self.client.get(&horizon_endpoint).send().await?;
+        if !resp.status().is_success() {
+            return Err(RpcClientError::InvalidResult(format!(
+                "Horizon account lookup returned HTTP {}",
+                resp.status()
+            )));
+        }
+        let horizon_body: serde_json::Value = resp.json().await?;
+        horizon_body
             .get("sequence")
             .and_then(|s| {
                 s.as_str()
@@ -156,7 +182,7 @@ impl SorobanRpcClient {
             })
             .ok_or_else(|| {
                 RpcClientError::InvalidResult(
-                    "sequence field missing or invalid in getAccount response".into(),
+                    "sequence field missing or invalid in Horizon account response".into(),
                 )
             })
     }

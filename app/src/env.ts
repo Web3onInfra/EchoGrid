@@ -37,7 +37,7 @@ export function getAppEnv(): AppConfig {
   }
 
   return {
-    oracleUrl: 'http://localhost:8080',
+    oracleUrl: '',
   };
 }
 

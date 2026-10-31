@@ -5,6 +5,10 @@ import { SpectrogramCanvas } from '../components/SpectrogramCanvas';
 import { BandMeters } from '../components/BandMeters';
 import { DetectorState, FrameResult } from '../detector/types';
 import { triggerHaptic, HAPTIC_PATTERNS } from '../utils/haptics';
+import { useWallet } from '../context/WalletContext';
+import { oracleClient } from '../api/oracleClient';
+import { claimSubmissionService, ClaimResult } from '../claim/submissionService';
+import { saveReceipt } from '../claim/receiptStorage';
 
 // Lightweight inline SVG icons
 const ActivityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
@@ -82,6 +86,19 @@ const EyeOffIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' })
   </svg>
 );
 
+const ExternalLinkIcon: React.FC<{ className?: string }> = ({ className = 'w-3 h-3' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+  </svg>
+);
+
+const SpinnerIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+  </svg>
+);
+
 const RadioIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <circle cx="12" cy="12" r="2" />
@@ -104,9 +121,10 @@ export type MonitorStatus = 'IDLE' | 'PERMISSION' | 'CALIBRATING' | 'ARMED' | 'D
 export interface MonitorViewProps {
   pipelineOverride?: AudioPipeline;
   onDropConfirmed?: (frame: FrameResult, simulated: boolean) => void;
+  onNavigateToReceipt?: () => void;
 }
 
-export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDropConfirmed }) => {
+export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDropConfirmed, onNavigateToReceipt }) => {
   const [status, setStatus] = useState<MonitorStatus>('IDLE');
   const [isSimulatorMode, setIsSimulatorMode] = useState<boolean>(false);
   const [simApplianceStopped, setSimApplianceStopped] = useState<boolean>(false);
@@ -121,6 +139,66 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
   const [bandEnergies, setBandEnergies] = useState<number[]>([-60, -60, -60]);
   const [fftMagnitudes, setFftMagnitudes] = useState<Float32Array | null>(null);
   const [confirmedFrame, setConfirmedFrame] = useState<FrameResult | null>(null);
+  const { address, createDemoWallet } = useWallet();
+  const [claimStatus, setClaimStatus] = useState<'idle' | 'submitting' | 'confirmed' | 'failed'>('idle');
+  const [claimProgress, setClaimProgress] = useState<string>('');
+  const [claimResult, setClaimResult] = useState<ClaimResult | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
+
+  const handleSubmitClaim = async () => {
+    let targetAddress = address;
+    if (!targetAddress) {
+      if (createDemoWallet) {
+        try {
+          targetAddress = await createDemoWallet();
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (!targetAddress) {
+      setClaimError('No wallet address available. Connect a wallet in the Wallet tab.');
+      return;
+    }
+
+    setClaimStatus('submitting');
+    setClaimError(null);
+    setClaimProgress('Requesting challenge...');
+
+    try {
+      const challenge = await oracleClient.getChallenge(targetAddress);
+      setClaimProgress('Submitting proof to Rust Oracle...');
+
+      const result = await claimSubmissionService.submitClaim({
+        walletAddress: targetAddress,
+        challengeId: challenge.challenge_id,
+        durationSeconds: confirmedFrame ? confirmedFrame.timestamp_s : 3.5,
+        simulated: isSimulatorMode,
+        onProgress: (p) => {
+          if (p === 'submitting') setClaimProgress('Verifying proof with Oracle...');
+          if (p === 'polling') setClaimProgress('Settling on Stellar Testnet...');
+        },
+      });
+
+      saveReceipt({
+        claimId: result.claimId,
+        walletAddress: result.walletAddress,
+        status: 'confirmed',
+        amountStroops: result.amountStroops,
+        txHash: result.txHash,
+        explorerUrl: result.explorerUrl,
+        simulated: result.simulated,
+        timestamp: result.timestamp,
+      });
+
+      setClaimResult(result);
+      setClaimStatus('confirmed');
+    } catch (err: unknown) {
+      setClaimStatus('failed');
+      setClaimError(err instanceof Error ? err.message : 'Claim verification failed');
+    }
+  };
 
   const pipelineRef = useRef<AudioPipeline>(pipelineOverride || new AudioPipeline());
   const simulatorRef = useRef<HumSimulator>(new HumSimulator(16000));
@@ -171,6 +249,10 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
     setSimApplianceStopped(false);
     setFftMagnitudes(null);
     setBandEnergies([-60, -60, -60]);
+    setClaimStatus('idle');
+    setClaimProgress('');
+    setClaimResult(null);
+    setClaimError(null);
     calibrationFramesRef.current = 0;
     setStatusAnnouncement('Monitoring stopped. Idle.');
   }, []);
@@ -476,6 +558,88 @@ export const MonitorView: React.FC<MonitorViewProps> = ({ pipelineOverride, onDr
               {confirmedFrame?.timestamp_s.toFixed(1)}s.
               {isSimulatorMode && ' (Simulated Claim — No real XLM payout)'}
             </p>
+
+            {/* Claim Submission & Settlement State */}
+            {claimStatus === 'confirmed' && claimResult ? (
+              <div
+                data-testid="settlement-confirmed-card"
+                className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-left space-y-2"
+              >
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                  <CheckCircleIcon className="w-4 h-4 text-emerald-500" />
+                  <span>Settlement Confirmed on Stellar!</span>
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                  {claimResult.simulated ? (
+                    <span className="font-semibold text-purple-600 dark:text-purple-400">
+                      Simulated Claim: {(claimResult.amountStroops / 1e7).toFixed(2)} XLM (Recorded)
+                    </span>
+                  ) : (
+                    <span>
+                      Bounty Paid:{' '}
+                      <strong className="text-emerald-600 dark:text-emerald-400">
+                        {(claimResult.amountStroops / 1e7).toFixed(2)} XLM
+                      </strong>
+                    </span>
+                  )}
+                </div>
+                {claimResult.explorerUrl && (
+                  <a
+                    href={claimResult.explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="view-stellarexpert-link"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    <span>View on StellarExpert</span>
+                    <ExternalLinkIcon className="w-3 h-3" />
+                  </a>
+                )}
+                {onNavigateToReceipt && (
+                  <button
+                    onClick={onNavigateToReceipt}
+                    data-testid="view-receipt-btn"
+                    className="touch-target w-full mt-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition"
+                  >
+                    View Settlement Receipt &rarr;
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {claimError && (
+                  <div
+                    data-testid="claim-error-banner"
+                    className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-600 dark:text-rose-400 text-left font-medium"
+                  >
+                    {claimError}
+                  </div>
+                )}
+                <button
+                  onClick={handleSubmitClaim}
+                  disabled={claimStatus === 'submitting'}
+                  data-testid="submit-claim-btn"
+                  className={`touch-target w-full py-3 px-4 rounded-xl text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-sm ${
+                    claimStatus === 'submitting'
+                      ? 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98]'
+                  }`}
+                >
+                  {claimStatus === 'submitting' ? (
+                    <>
+                      <SpinnerIcon className="w-4 h-4 animate-spin" />
+                      <span>{claimProgress || 'Verifying with Oracle...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <SparklesIcon className="w-4 h-4" />
+                      <span>Submit Claim Bounty</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
             <button
               onClick={stopMonitoring}
               data-testid="reset-monitor-btn"

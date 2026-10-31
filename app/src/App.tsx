@@ -43,7 +43,7 @@ export const AppContent: React.FC = () => {
         {activeTab === 'grid' && <GridView />}
         {activeTab === 'monitor' && (
             <Suspense fallback={<MonitorLoadingSkeleton />}>
-              <LazyMonitorView />
+              <LazyMonitorView onNavigateToReceipt={() => setActiveTab('receipt')} />
             </Suspense>
         )}
         {activeTab === 'wallet' && <WalletView />}
