@@ -145,15 +145,15 @@ impl SorobanRpcClient {
 
     pub async fn get_account_sequence(&self, account: &str) -> Result<u64, RpcClientError> {
         let params = serde_json::json!({ "address": account });
-        if let Ok(result) = self.call_rpc::<serde_json::Value, serde_json::Value>("getAccount", Some(params)).await {
-            if let Some(seq) = result
-                .get("sequence")
-                .and_then(|s| {
-                    s.as_str()
-                        .and_then(|str_val| str_val.parse::<u64>().ok())
-                        .or_else(|| s.as_u64())
-                })
-            {
+        if let Ok(result) = self
+            .call_rpc::<serde_json::Value, serde_json::Value>("getAccount", Some(params))
+            .await
+        {
+            if let Some(seq) = result.get("sequence").and_then(|s| {
+                s.as_str()
+                    .and_then(|str_val| str_val.parse::<u64>().ok())
+                    .or_else(|| s.as_u64())
+            }) {
                 return Ok(seq);
             }
         }

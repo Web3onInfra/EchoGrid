@@ -671,15 +671,34 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         let logs = String::from_utf8(TEST_LOG_BUFFER.lock().unwrap().clone()).unwrap();
-        assert!(logs.contains("access_log"), "Logs must contain access_log event: got '{}'", logs);
-        assert!(logs.contains("method=GET") || logs.contains("method=\"GET\""), "Logs must contain method");
-        assert!(logs.contains("path=/api/v1/health") || logs.contains("path=\"/api/v1/health\""), "Logs must contain path");
-        assert!(logs.contains("status=200"), "Logs must contain HTTP status 200");
+        assert!(
+            logs.contains("access_log"),
+            "Logs must contain access_log event: got '{}'",
+            logs
+        );
+        assert!(
+            logs.contains("method=GET") || logs.contains("method=\"GET\""),
+            "Logs must contain method"
+        );
+        assert!(
+            logs.contains("path=/api/v1/health") || logs.contains("path=\"/api/v1/health\""),
+            "Logs must contain path"
+        );
+        assert!(
+            logs.contains("status=200"),
+            "Logs must contain HTTP status 200"
+        );
         assert!(logs.contains("request_id="), "Logs must contain request_id");
         assert!(logs.contains("latency_ms="), "Logs must contain latency_ms");
 
         // Verify secrets and request bodies are NEVER logged
-        assert!(!logs.contains(sensitive_token), "Sensitive auth tokens must NOT appear in access logs");
-        assert!(!logs.contains(sensitive_payload), "Payload bodies must NOT appear in access logs");
+        assert!(
+            !logs.contains(sensitive_token),
+            "Sensitive auth tokens must NOT appear in access logs"
+        );
+        assert!(
+            !logs.contains(sensitive_payload),
+            "Payload bodies must NOT appear in access logs"
+        );
     }
 }
