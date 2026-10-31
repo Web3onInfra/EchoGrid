@@ -19,7 +19,7 @@
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-base": "^15.0.0",
     "lucide-react": "^1.64.0",
-    "react": "^18.3.1",
+    "react": "^19.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
@@ -27,7 +27,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^15.0.0",
-    "@types/react": "^18.3.1",
+    "@types/react": "^19.3.0",
     "@types/react-dom": "^18.3.1",
     "@typescript-eslint/eslint-plugin": "^7.1.0",
     "@typescript-eslint/parser": "^7.1.0",
