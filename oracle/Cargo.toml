@@ -38,7 +38,7 @@ tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
 
 # ── Config & Secrets ─────────────────────────────────────────────────────────
 dotenvy = "0.15"
-secrecy = { version = "0.8", features = ["serde"] }
+secrecy = { version = "0.10", features = ["serde"] }
 
 # ── Error handling ───────────────────────────────────────────────────────────
 thiserror = "1"
